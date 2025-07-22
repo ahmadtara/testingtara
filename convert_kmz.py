@@ -21,19 +21,20 @@ def extract_polygon_from_kmz(kmz_path):
 
     with open(kml_path, 'rt', encoding='utf-8') as file:
         doc = file.read()
+
     k = kml.KML()
     k.from_string(doc)
 
     polygons = []
 
     def recurse(feats):
-        for feat in feats:
+        for feat in list(feats):
             if hasattr(feat, "geometry") and isinstance(feat.geometry, Polygon):
                 polygons.append(feat.geometry)
             elif hasattr(feat, "features"):
-                recurse(feat.features())
+                recurse(feat.features)
 
-    recurse(k.features())
+    recurse(k.features)
 
     if not polygons:
         raise Exception("No Polygon found in KML")
@@ -56,7 +57,7 @@ def export_to_dxf(gdf, dxf_path):
                 msp.add_lwpolyline(list(line.coords))
     doc.saveas(dxf_path)
 
-def process_kmz_to_dxf(kmz_path, output_dir="output"):
+def process_kmz_to_dxf(kmz_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     polygon = extract_polygon_from_kmz(kmz_path)
     roads = get_osm_roads(polygon)
