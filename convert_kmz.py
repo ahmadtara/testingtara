@@ -1,3 +1,4 @@
+# convert_kmz.py
 import os
 import zipfile
 import geopandas as gpd
@@ -30,9 +31,9 @@ def extract_polygon_from_kmz(kmz_path):
             if hasattr(feat, "geometry") and isinstance(feat.geometry, Polygon):
                 polygons.append(feat.geometry)
             elif hasattr(feat, "features"):
-                recurse(feat.features)
+                recurse(feat.features())
 
-    recurse(k.features)
+    recurse(k.features())
 
     if not polygons:
         raise Exception("No Polygon found in KML")
@@ -49,24 +50,22 @@ def export_to_dxf(gdf, dxf_path):
     msp = doc.modelspace()
     for geom in gdf.geometry:
         if geom.geom_type == "LineString":
-            points = list(geom.coords)
-            msp.add_lwpolyline(points)
+            msp.add_lwpolyline(list(geom.coords))
         elif geom.geom_type == "MultiLineString":
             for line in geom.geoms:
-                points = list(line.coords)
-                msp.add_lwpolyline(points)
+                msp.add_lwpolyline(list(line.coords))
     doc.saveas(dxf_path)
 
-def process_kmz_to_dxf(kmz_path, output_dir):
+def process_kmz_to_dxf(kmz_path, output_dir="output"):
     os.makedirs(output_dir, exist_ok=True)
     polygon = extract_polygon_from_kmz(kmz_path)
     roads = get_osm_roads(polygon)
     roads_utm = roads.to_crs(TARGET_EPSG)
 
     geojson_path = os.path.join(output_dir, "roadmap_osm.geojson")
-    roads_utm.to_file(geojson_path, driver="GeoJSON")
-
     dxf_path = os.path.join(output_dir, "roadmap_osm.dxf")
+
+    roads_utm.to_file(geojson_path, driver="GeoJSON")
     export_to_dxf(roads_utm, dxf_path)
 
     return dxf_path, geojson_path
