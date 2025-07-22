@@ -1,3 +1,5 @@
-streamlit
-ezdxf
-requests
+geopandas
+shapely
+fastkml
+pyproj
+fiona
