@@ -1,7 +1,7 @@
 geopandas
 shapely
 fastkml
-requests
+osmnx
+ezdxf
 pyproj
 fiona
-ezdxf
