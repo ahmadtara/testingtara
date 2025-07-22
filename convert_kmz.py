@@ -2,7 +2,7 @@
 import os
 import zipfile
 import geopandas as gpd
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from fastkml import kml
 import osmnx as ox
 import ezdxf
@@ -10,6 +10,7 @@ import ezdxf
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
 def extract_polygon_from_kmz(kmz_path):
+    # Ekstrak file KML dari KMZ
     with zipfile.ZipFile(kmz_path, 'r') as zf:
         for f in zf.namelist():
             if f.endswith('.kml'):
@@ -27,19 +28,28 @@ def extract_polygon_from_kmz(kmz_path):
 
     polygons = []
 
+    def extract_polygons(geom):
+        if isinstance(geom, Polygon):
+            polygons.append(geom)
+        elif isinstance(geom, MultiPolygon):
+            polygons.extend(list(geom.geoms))
+        elif isinstance(geom, GeometryCollection):
+            for g in geom.geoms:
+                extract_polygons(g)
+
     def recurse(feats):
         for feat in list(feats):
-            if hasattr(feat, "geometry") and isinstance(feat.geometry, Polygon):
-                polygons.append(feat.geometry)
-            elif hasattr(feat, "features"):
+            if hasattr(feat, "geometry") and feat.geometry is not None:
+                extract_polygons(feat.geometry)
+            if hasattr(feat, "features"):
                 recurse(feat.features)
 
-    recurse(k.features)
+    recurse(k.features())
 
     if not polygons:
         raise Exception("No Polygon found in KML")
 
-    return polygons[0]
+    return polygons[0]  # Ambil satu polygon pertama
 
 def get_osm_roads(polygon: Polygon):
     roads = ox.features_from_polygon(polygon, tags={"highway": True})
