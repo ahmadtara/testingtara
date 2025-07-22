@@ -1,4 +1,3 @@
-# convert_kmz.py
 import os
 import zipfile
 import geopandas as gpd
@@ -10,7 +9,6 @@ import ezdxf
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
 def extract_polygon_from_kmz(kmz_path):
-    # Ekstrak file KML dari KMZ
     with zipfile.ZipFile(kmz_path, 'r') as zf:
         for f in zf.namelist():
             if f.endswith('.kml'):
@@ -44,17 +42,20 @@ def extract_polygon_from_kmz(kmz_path):
             if hasattr(feat, "features"):
                 recurse(feat.features)
 
-    recurse(k.features())
+    recurse(k.features)  # FIXED
 
     if not polygons:
         raise Exception("No Polygon found in KML")
 
-    return polygons[0]  # Ambil satu polygon pertama
+    return polygons[0]
 
 def get_osm_roads(polygon: Polygon):
-    roads = ox.features_from_polygon(polygon, tags={"highway": True})
-    roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])]
-    return roads
+    try:
+        roads = ox.features_from_polygon(polygon, tags={"highway": True})
+        roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])]
+        return roads
+    except Exception:
+        return gpd.GeoDataFrame()
 
 def export_to_dxf(gdf, dxf_path):
     doc = ezdxf.new()
@@ -71,12 +72,17 @@ def process_kmz_to_dxf(kmz_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     polygon = extract_polygon_from_kmz(kmz_path)
     roads = get_osm_roads(polygon)
-    roads_utm = roads.to_crs(TARGET_EPSG)
 
     geojson_path = os.path.join(output_dir, "roadmap_osm.geojson")
     dxf_path = os.path.join(output_dir, "roadmap_osm.dxf")
 
-    roads_utm.to_file(geojson_path, driver="GeoJSON")
-    export_to_dxf(roads_utm, dxf_path)
+    if not roads.empty:
+        roads_utm = roads.to_crs(TARGET_EPSG)
+        roads_utm.to_file(geojson_path, driver="GeoJSON")
+        export_to_dxf(roads_utm, dxf_path)
+        jalan_ditemukan = True
+    else:
+        jalan_ditemukan = False
+        raise Exception("Tidak ada jalan ditemukan di dalam area polygon.")
 
-    return dxf_path, geojson_path
+    return dxf_path, geojson_path, jalan_ditemukan
