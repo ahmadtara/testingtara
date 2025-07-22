@@ -1,81 +1,98 @@
 import os
 import zipfile
 import geopandas as gpd
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import Polygon
 from fastkml import kml
+import osmnx as ox
+import ezdxf
 
-# Konfigurasi
-BOUNDARY_DIR = "BOUNDARY CLUSTER"
+# === Konfigurasi ===
+KMZ_FILE = os.path.join("BOUNDARY CLUSTER", "Untitled Polygon.kmz")
 OUTPUT_DIR = "output"
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S (Indonesia Timur)
 
-# Buat folder output jika belum ada
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def extract_kml_from_kmz(kmz_path, extract_to):
+
+# === Ekstrak Poligon dari KMZ ===
+def extract_polygon_from_kmz(kmz_path):
     with zipfile.ZipFile(kmz_path, 'r') as zf:
         for f in zf.namelist():
             if f.endswith('.kml'):
-                zf.extract(f, extract_to)
-                return os.path.join(extract_to, f)
-    return None
-
-def extract_geometries_from_kml(kml_path):
+                zf.extract(f, "/tmp")
+                kml_path = os.path.join("/tmp", f)
+                break
+        else:
+            raise Exception("KML file not found in KMZ")
+    
     with open(kml_path, 'rt', encoding='utf-8') as file:
         doc = file.read()
     k = kml.KML()
     k.from_string(doc)
 
-    placemarks = []
+    polygons = []
 
-    def recurse_features(features):
-        for f in features:
-            if hasattr(f, 'geometry') and f.geometry is not None:
-                placemarks.append(f)
-            elif hasattr(f, 'features'):
-                recurse_features(list(f.features()))
+    def recurse(feats):
+        for feat in feats:
+            if hasattr(feat, "geometry") and isinstance(feat.geometry, Polygon):
+                polygons.append(feat.geometry)
+            elif hasattr(feat, "features"):
+                recurse(feat.features())
 
-    recurse_features(list(k.features()))
+    recurse(k.features())
 
-    geoms = []
-    for p in placemarks:
-        geom = p.geometry
-        # Ambil garis luar dari Polygon
-        if isinstance(geom, Polygon):
-            outline = geom.exterior
-            geoms.append({'name': getattr(p, 'name', 'Unnamed'), 'geometry': LineString(outline.coords)})
-        elif isinstance(geom, LineString):
-            geoms.append({'name': getattr(p, 'name', 'Unnamed'), 'geometry': geom})
+    if not polygons:
+        raise Exception("No Polygon found in KML")
+    
+    return polygons[0]
 
-    return geoms
 
-def convert_to_utm(geoms):
-    gdf = gpd.GeoDataFrame(geoms, crs='EPSG:4326')
-    return gdf.to_crs(TARGET_EPSG)
+# === Ambil Data Jalan dari OSM ===
+def get_osm_roads(polygon: Polygon):
+    print("🌐 Mengambil jalan dari OpenStreetMap...")
+    # osmnx expects GeoSeries
+    gdf_poly = gpd.GeoSeries([polygon], crs="EPSG:4326")
+    roads = ox.features_from_polygon(polygon, tags={"highway": True})
+    roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])]
+    return roads
 
-def process_all_kmz():
-    for filename in os.listdir(BOUNDARY_DIR):
-        if filename.endswith(".kmz"):
-            print(f"⏳ Memproses: {filename}")
-            base = os.path.splitext(filename)[0]
-            temp_extract_path = os.path.join(BOUNDARY_DIR, "tmp")
-            os.makedirs(temp_extract_path, exist_ok=True)
 
-            kmz_path = os.path.join(BOUNDARY_DIR, filename)
-            kml_path = extract_kml_from_kmz(kmz_path, temp_extract_path)
+# === Ekspor ke DXF ===
+def export_to_dxf(gdf, dxf_path):
+    doc = ezdxf.new()
+    msp = doc.modelspace()
 
-            if not kml_path:
-                print(f"⚠️  Gagal extract KML dari {filename}")
-                continue
+    for geom in gdf.geometry:
+        if geom.geom_type == "LineString":
+            points = list(geom.coords)
+            msp.add_lwpolyline(points)
+        elif geom.geom_type == "MultiLineString":
+            for line in geom.geoms:
+                points = list(line.coords)
+                msp.add_lwpolyline(points)
 
-            geometries = extract_geometries_from_kml(kml_path)
-            if not geometries:
-                print(f"⚠️  Tidak ditemukan Polygon/LineString di {filename}")
-                continue
+    doc.saveas(dxf_path)
+    print(f"✅ DXF disimpan: {dxf_path}")
 
-            utm_gdf = convert_to_utm(geometries)
-            output_path = os.path.join(OUTPUT_DIR, f"{base}_utm.geojson")
-            utm_gdf.to_file(output_path, driver='GeoJSON')
-            print(f"✅ Disimpan: {output_path}")
 
-process_all_kmz()
+# === Main Flow ===
+def main():
+    print("📥 Membaca poligon dari KMZ...")
+    polygon = extract_polygon_from_kmz(KMZ_FILE)
+
+    print("📦 Mendownload data jalan dari OSM...")
+    roads = get_osm_roads(polygon)
+
+    print("🗺️ Proyeksi ke UTM Zone 60S...")
+    roads_utm = roads.to_crs(TARGET_EPSG)
+
+    geojson_path = os.path.join(OUTPUT_DIR, "roadmap_osm.geojson")
+    roads_utm.to_file(geojson_path, driver="GeoJSON")
+    print(f"✅ GeoJSON disimpan: {geojson_path}")
+
+    dxf_path = os.path.join(OUTPUT_DIR, "roadmap_osm.dxf")
+    export_to_dxf(roads_utm, dxf_path)
+
+
+if __name__ == "__main__":
+    main()
