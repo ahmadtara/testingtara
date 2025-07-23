@@ -2,7 +2,7 @@
 import streamlit as st
 import os
 import tempfile
-from convert_kml import process_kml_to_dxf  # Ganti dari convert_kmz
+from convert_kml import process_kml_to_dxf
 
 st.set_page_config(page_title="KML to DXF Road Extractor", layout="centered")
 st.title("🗺️ KML → DXF Road Converter")
