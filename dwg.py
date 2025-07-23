@@ -5,7 +5,6 @@ from shapely.ops import unary_union
 import ezdxf
 import streamlit as st
 import tempfile
-import osmnx as ox
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
@@ -17,15 +16,18 @@ def extract_polygon_from_kml(kml_path):
         raise Exception("No Polygon found in KML")
     return unary_union(polygons.geometry), polygons.crs
 
-# --- Ambil Bangunan dari OSM via Overpass ---
-def load_buildings_from_osm(polygon):
-    st.info("📦 Mengambil bangunan dari OSM via Overpass...")
+# --- Ambil Bangunan dari GBF HuggingFace ---
+def load_buildings_from_gbf(polygon, gbf_url):
+    st.info("📦 Mengambil bangunan dari GBF via HuggingFace...")
     try:
-        gdf = ox.geometries_from_polygon(polygon, tags={"building": True})
-        gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
-        return gdf
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_file = os.path.join(tmpdir, "indonesia.geojson")
+            gdf = gpd.read_file(gbf_url)
+            gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+            gdf = gdf[gdf.geometry.within(polygon)]
+            return gdf
     except Exception as e:
-        raise Exception(f"Gagal mengambil bangunan dari OSM: {e}")
+        raise Exception(f"Gagal membaca GBF dari HuggingFace: {e}")
 
 # --- Ekspor ke DXF ---
 def export_to_dxf_buildings(gdf, dxf_path):
@@ -49,11 +51,11 @@ def export_to_dxf_buildings(gdf, dxf_path):
     doc.saveas(dxf_path)
 
 # --- Proses Utama ---
-def process_kml_to_dxf(kml_path, output_dir):
+def process_kml_to_dxf(kml_path, output_dir, gbf_url):
     os.makedirs(output_dir, exist_ok=True)
     polygon, _ = extract_polygon_from_kml(kml_path)
 
-    gdf = load_buildings_from_osm(polygon)
+    gdf = load_buildings_from_gbf(polygon, gbf_url)
     if gdf.empty:
         raise Exception("Tidak ada bangunan dalam area ini.")
 
@@ -63,12 +65,13 @@ def process_kml_to_dxf(kml_path, output_dir):
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="KML → DXF Auto Building Extractor", layout="wide")
-st.title("🏠 KML → DXF Building Extractor (OSM Overpass)")
+st.title("🏠 KML → DXF Building Extractor (GBF HuggingFace)")
 st.caption("Upload file .KML (batas area perumahan)")
 
 kml_file = st.file_uploader("Upload file .KML", type=["kml"])
+gbf_url = st.text_input("Masukkan URL GeoJSON GBF dari HuggingFace:", placeholder="https://huggingface.co/.../file.geojson")
 
-if kml_file:
+if kml_file and gbf_url:
     with st.spinner("💫 Memproses file dan mengekstrak bangunan..."):
         try:
             temp_input = f"/tmp/{kml_file.name}"
@@ -76,7 +79,7 @@ if kml_file:
                 f.write(kml_file.read())
 
             output_dir = "/tmp/output"
-            dxf_path, ok = process_kml_to_dxf(temp_input, output_dir)
+            dxf_path, ok = process_kml_to_dxf(temp_input, output_dir, gbf_url)
 
             if ok:
                 st.success("✅ Berhasil diekspor ke DXF!")
