@@ -5,7 +5,7 @@ from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineStri
 from fastkml import kml
 import osmnx as ox
 import ezdxf
-from shapely.ops import unary_union, linemerge, snap, polygonize
+from shapely.ops import unary_union, linemerge, snap
 import pandas as pd
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
@@ -65,6 +65,9 @@ def export_to_dxf(gdf, dxf_path):
     msp = doc.modelspace()
 
     grouped_buffers = {}
+    total_features = len(gdf)
+    success_count = 0
+    fail_count = 0
 
     for _, row in gdf.iterrows():
         geom = row.geometry
@@ -75,12 +78,22 @@ def export_to_dxf(gdf, dxf_path):
         if geom.geom_type in ["LineString", "MultiLineString"]:
             try:
                 merged = linemerge(geom)
+                if merged.is_empty or not merged.is_valid:
+                    fail_count += 1
+                    continue
                 buffer = merged.buffer(width / 2, resolution=8, join_style=2)
+                if buffer.is_empty:
+                    fail_count += 1
+                    continue
                 if layer not in grouped_buffers:
                     grouped_buffers[layer] = []
                 grouped_buffers[layer].append(buffer)
+                success_count += 1
             except:
+                fail_count += 1
                 continue
+
+    print(f"✅ Buffer sukses: {success_count} dari {total_features}, gagal: {fail_count}")
 
     if not grouped_buffers:
         raise Exception("❌ Tidak ada garis valid untuk diekspor.")
@@ -91,14 +104,20 @@ def export_to_dxf(gdf, dxf_path):
 
     for layer, buffers in grouped_buffers.items():
         union = unary_union(buffers)
+        outlines = []
+
+        if union.is_empty:
+            continue
         if union.geom_type == 'Polygon':
             outlines = [union.exterior]
         elif union.geom_type == 'MultiPolygon':
-            outlines = [poly.exterior for poly in union.geoms]
-        else:
-            continue
+            outlines = [poly.exterior for poly in union.geoms if poly.exterior is not None]
+        elif union.geom_type == 'GeometryCollection':
+            outlines = [g.exterior for g in union.geoms if hasattr(g, 'exterior')]
 
         for outline in outlines:
+            if outline is None:
+                continue
             shifted = [(x - min_x, y - min_y) for x, y in outline.coords]
             msp.add_lwpolyline(shifted, dxfattribs={"layer": layer})
 
