@@ -1,89 +1,49 @@
-import os
-import geopandas as gpd
-from shapely.geometry import Polygon, MultiPolygon
-from shapely.ops import unary_union
-import ezdxf
 import streamlit as st
-import tempfile
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import shape
+import requests
+import os
+import zipfile
 
-TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
+st.title("🌍 Global ML Building Footprints Downloader")
+st.caption("Convert Microsoft building footprints to GeoJSON for any country")
 
-# --- Ekstrak Polygon Area dari KML ---
-def extract_polygon_from_kml(kml_path):
-    gdf = gpd.read_file(kml_path)
-    polygons = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
-    if polygons.empty:
-        raise Exception("No Polygon found in KML")
-    return unary_union(polygons.geometry), polygons.crs
+# Pilihan negara
+countries = ["Indonesia", "Greece", "Angola", "India"]
+selected_country = st.selectbox("Pilih Negara", countries)
 
-# --- Ambil Bangunan dari GBF HuggingFace ---
-def load_buildings_from_gbf(polygon, gbf_url):
-    st.info("📦 Mengambil bangunan dari GBF via HuggingFace...")
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            local_file = os.path.join(tmpdir, "indonesia.geojson")
-            gdf = gpd.read_file(gbf_url)
-            gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
-            gdf = gdf[gdf.geometry.within(polygon)]
-            return gdf
-    except Exception as e:
-        raise Exception(f"Gagal membaca GBF dari HuggingFace: {e}")
+if st.button("🔽 Download & Convert"):
+    st.info(f"Proses untuk {selected_country} dimulai...")
 
-# --- Ekspor ke DXF ---
-def export_to_dxf_buildings(gdf, dxf_path):
-    doc = ezdxf.new()
-    msp = doc.modelspace()
+    # Ambil daftar dataset
+    links_url = "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv"
+    dataset_links = pd.read_csv(links_url)
+    country_links = dataset_links[dataset_links.Location == selected_country]
 
-    bounds = [(pt[0], pt[1]) for geom in gdf.geometry for pt in geom.exterior.coords]
-    min_x = min(x for x, y in bounds)
-    min_y = min(y for x, y in bounds)
+    if country_links.empty:
+        st.error("Dataset tidak ditemukan!")
+    else:
+        os.makedirs("output", exist_ok=True)
+        all_files = []
 
-    for geom in gdf.geometry:
-        if geom.geom_type == "Polygon":
-            coords = [(pt[0] - min_x, pt[1] - min_y) for pt in geom.exterior.coords]
-            msp.add_lwpolyline(coords, dxfattribs={"layer": "BUILDINGS"})
-        elif geom.geom_type == "MultiPolygon":
-            for poly in geom.geoms:
-                coords = [(pt[0] - min_x, pt[1] - min_y) for pt in poly.exterior.coords]
-                msp.add_lwpolyline(coords, dxfattribs={"layer": "BUILDINGS"})
+        for _, row in country_links.iterrows():
+            st.write(f"📥 Download {row.Url}")
+            # Baca file GeoJSONL
+            df = pd.read_json(row.Url, lines=True)
+            df['geometry'] = df['geometry'].apply(shape)
+            gdf = gpd.GeoDataFrame(df, crs=4326)
 
-    doc.set_modelspace_vport(height=10000)
-    doc.saveas(dxf_path)
+            out_file = f"output/{row.QuadKey}.geojson"
+            gdf.to_file(out_file, driver="GeoJSON")
+            all_files.append(out_file)
 
-# --- Proses Utama ---
-def process_kml_to_dxf(kml_path, output_dir, gbf_url):
-    os.makedirs(output_dir, exist_ok=True)
-    polygon, _ = extract_polygon_from_kml(kml_path)
+        # Gabungkan ke ZIP
+        zip_path = f"{selected_country}_buildings.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for file in all_files:
+                zipf.write(file)
 
-    gdf = load_buildings_from_gbf(polygon, gbf_url)
-    if gdf.empty:
-        raise Exception("Tidak ada bangunan dalam area ini.")
-
-    dxf_path = os.path.join(output_dir, "buildings_detected.dxf")
-    export_to_dxf_buildings(gdf.to_crs(TARGET_EPSG), dxf_path)
-    return dxf_path, True
-
-# --- Streamlit UI ---
-st.set_page_config(page_title="KML → DXF Auto Building Extractor", layout="wide")
-st.title("🏠 KML → DXF Building Extractor (GBF HuggingFace)")
-st.caption("Upload file .KML (batas area perumahan)")
-
-kml_file = st.file_uploader("Upload file .KML", type=["kml"])
-gbf_url = st.text_input("Masukkan URL GeoJSON GBF dari HuggingFace:", placeholder="https://huggingface.co/.../file.geojson")
-
-if kml_file and gbf_url:
-    with st.spinner("💫 Memproses file dan mengekstrak bangunan..."):
-        try:
-            temp_input = f"/tmp/{kml_file.name}"
-            with open(temp_input, "wb") as f:
-                f.write(kml_file.read())
-
-            output_dir = "/tmp/output"
-            dxf_path, ok = process_kml_to_dxf(temp_input, output_dir, gbf_url)
-
-            if ok:
-                st.success("✅ Berhasil diekspor ke DXF!")
-                with open(dxf_path, "rb") as f:
-                    st.download_button("⬇️ Download DXF", data=f, file_name="buildings_detected.dxf")
-        except Exception as e:
-            st.error(f"❌ Terjadi kesalahan: {e}")
+        st.success(f"✅ Proses selesai! {len(all_files)} file dibuat.")
+        with open(zip_path, "rb") as f:
+            st.download_button("⬇️ Download ZIP", f, file_name=zip_path)
