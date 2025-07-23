@@ -1,55 +1,35 @@
 # convert_kml.py
 import os
 import geopandas as gpd
-from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineString
-from fastkml import kml
+from shapely.geometry import Polygon
+from lxml import etree
 import osmnx as ox
 import ezdxf
-import streamlit as st
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
 def extract_polygon_from_kml(kml_path):
-    with open(kml_path, 'rt', encoding='utf-8') as file:
-        doc = file.read()
+    with open(kml_path, 'rt', encoding='utf-8') as f:
+        tree = etree.parse(f)
 
-    k = kml.KML()
-    k.from_string(doc)
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    coords = tree.xpath('//kml:Polygon/kml:outerBoundaryIs/kml:LinearRing/kml:coordinates', namespaces=ns)
 
-    # Debug struktur isi KML
-    st.code(k.to_string(prettyprint=True), language="xml")
+    if not coords:
+        raise Exception("❌ Polygon <coordinates> not found in KML.")
 
-    polygons = []
+    coord_text = coords[0].text.strip()
+    point_list = []
+    for line in coord_text.split():
+        parts = line.strip().split(',')
+        if len(parts) >= 2:
+            lon, lat = float(parts[0]), float(parts[1])
+            point_list.append((lon, lat))
 
-    def extract_polygons(geom):
-        if isinstance(geom, Polygon):
-            polygons.append(geom)
-        elif isinstance(geom, MultiPolygon):
-            polygons.extend(list(geom.geoms))
-        elif isinstance(geom, GeometryCollection):
-            for g in geom.geoms:
-                extract_polygons(g)
-        elif isinstance(geom, LineString):
-            if geom.is_ring:
-                polygons.append(Polygon(geom))
+    if len(point_list) < 3:
+        raise Exception("❌ Not enough points to form a polygon.")
 
-    def recurse(feats):
-        for feat in feats:
-            # Cari fitur di dalam struktur nested (Document, Folder, dst)
-            try:
-                subfeats = list(feat.features()) if callable(feat.features) else list(feat.features)
-                recurse(subfeats)
-            except Exception:
-                pass
-            if hasattr(feat, "geometry") and feat.geometry is not None:
-                extract_polygons(feat.geometry)
-
-    recurse(k.features)
-
-    if not polygons:
-        raise Exception("No Polygon or closed LineString found in KML")
-
-    return polygons[0]
+    return Polygon(point_list)
 
 def get_osm_roads(polygon: Polygon):
     try:
@@ -79,7 +59,7 @@ def process_kml_to_dxf(kml_path, output_dir):
     dxf_path = os.path.join(output_dir, "roadmap_osm.dxf")
 
     if roads.empty:
-        raise Exception("Tidak ada jalan ditemukan di dalam area polygon.")
+        raise Exception("⚠️ Tidak ada jalan ditemukan di dalam area polygon.")
 
     roads_utm = roads.to_crs(TARGET_EPSG)
     roads_utm.to_file(geojson_path, driver="GeoJSON")
