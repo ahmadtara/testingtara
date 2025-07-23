@@ -46,7 +46,8 @@ def extract_polygon_from_kml(kml_path):
     def recurse(feats):
         for feat in list(feats):
             if hasattr(feat, "geometry") and feat.geometry is not None:
-                extract_polygons(feat.geometry)
+                geom = feat.geometry  # trigger lazy parsing
+                extract_polygons(geom)
             if hasattr(feat, "features"):
                 recurse(feat.features)  # ✅ fix: call features()
 
