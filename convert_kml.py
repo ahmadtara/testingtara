@@ -68,37 +68,34 @@ def export_to_dxf(gdf, dxf_path):
     grouped_buffers = {}
     all_lines = []
 
-    for _, row in gdf.iterrows():
-        geom = row.geometry
+    # Merge seluruh geometri ke satu layer dulu untuk simpang otomatis
+    all_merged = linemerge(unary_union(gdf.geometry))
+
+    if isinstance(all_merged, (GeometryCollection, MultiLineString)):
+        all_lines = [g for g in all_merged.geoms if isinstance(g, LineString) and g.length >= MIN_LINE_LENGTH]
+    elif isinstance(all_merged, LineString):
+        all_lines = [all_merged] if all_merged.length >= MIN_LINE_LENGTH else []
+
+    for line in all_lines:
+        if not line.is_valid or line.is_empty:
+            continue
+        # Ambil atribut jalan berdasarkan kedekatan (nearest)
+        nearest = gdf.distance(gpd.GeoSeries([line])).idxmin()
+        row = gdf.loc[nearest]
+
         hwy = str(row.get("highway", "unknown"))
         width = get_dynamic_width(row)
         layer, _ = classify_layer(hwy)
 
-        if geom.geom_type in ["LineString", "MultiLineString"]:
-            try:
-                merged = linemerge(geom)
-
-                if isinstance(merged, (GeometryCollection, MultiLineString)):
-                    lines = [g for g in merged.geoms if isinstance(g, LineString)]
-                elif isinstance(merged, LineString):
-                    lines = [merged]
-                else:
-                    lines = []
-
-                for line in lines:
-                    if line.length < MIN_LINE_LENGTH:
-                        continue
-                    if not line.is_valid or line.is_empty:
-                        continue
-                    buffer = line.buffer(width / 2, resolution=8, join_style=2)
-                    if buffer.is_empty or not buffer.is_valid:
-                        continue
-                    if layer not in grouped_buffers:
-                        grouped_buffers[layer] = []
-                    grouped_buffers[layer].append(buffer)
-                    all_lines.append(line)
-            except:
+        try:
+            buffer = line.buffer(width / 2, resolution=8, join_style=2)
+            if buffer.is_empty or not buffer.is_valid:
                 continue
+            if layer not in grouped_buffers:
+                grouped_buffers[layer] = []
+            grouped_buffers[layer].append(buffer)
+        except:
+            continue
 
     if not grouped_buffers:
         raise Exception("❌ Tidak ada garis valid untuk diekspor.")
