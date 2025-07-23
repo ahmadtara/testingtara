@@ -6,13 +6,20 @@ import ezdxf
 import pandas as pd
 import streamlit as st
 import requests
-import cv2
 import numpy as np
 from ultralytics import YOLO
 from PIL import Image
 import tempfile
 import matplotlib.pyplot as plt
 from shapely.ops import unary_union
+
+# Handle opencv-python for Streamlit Cloud compatibility
+try:
+    import cv2
+except ImportError:
+    import subprocess
+    subprocess.run(["pip", "install", "opencv-python-headless"])
+    import cv2
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 MODEL_PATH = "yolov8-building.pt"  # Path ke model segmentasi bangunan YOLOv8 (custom)
