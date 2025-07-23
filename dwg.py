@@ -17,28 +17,30 @@ def extract_polygon_from_kml(kml_path):
         raise Exception("No Polygon found in KML")
     return unary_union(polygons.geometry), polygons.crs
 
-# --- Ambil Bangunan dari Microsoft Global Building Footprints ---
-def load_buildings_from_gbf(polygon):
-    st.info("📦 Mengunduh dan memfilter bangunan dari Microsoft GBF...")
-
-    url = "https://minedbuildings.blob.core.windows.net/global-buildings/v1/geojson/IND.geojson.zip"
-    temp_zip_path = os.path.join(tempfile.gettempdir(), "IND.geojson.zip")
+# --- Ambil Bangunan dari GeoFabrik OSM Indonesia ---
+def load_buildings_from_geofabrik(polygon):
+    st.info("📦 Mengunduh dan memfilter bangunan dari GeoFabrik Indonesia...")
+    url = "https://download.geofabrik.de/asia/indonesia-latest-free.shp.zip"
+    temp_zip_path = os.path.join(tempfile.gettempdir(), "indonesia-latest-free.shp.zip")
 
     if not os.path.exists(temp_zip_path):
         try:
-            with requests.get(url, stream=True, timeout=60) as r:
+            with requests.get(url, stream=True, timeout=120) as r:
                 r.raise_for_status()
                 with open(temp_zip_path, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
         except requests.RequestException as e:
-            raise Exception(f"Gagal mengunduh GBF untuk Indonesia: {e}")
+            raise Exception(f"Gagal mengunduh data GeoFabrik: {e}")
 
-    gdf = gpd.read_file(f"zip://{temp_zip_path}")
-    gdf = gdf.to_crs("EPSG:4326")
-    gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
-    gdf = gdf.clip(polygon)
-    return gdf
+    try:
+        gdf = gpd.read_file(f"zip://{temp_zip_path}!buildings.shp")
+        gdf = gdf.to_crs("EPSG:4326")
+        gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+        gdf = gdf.clip(polygon)
+        return gdf
+    except Exception as e:
+        raise Exception("Gagal membaca bangunan dari data GeoFabrik: buildings.shp tidak ditemukan")
 
 # --- Ekspor ke DXF ---
 def export_to_dxf_buildings(gdf, dxf_path):
@@ -66,19 +68,17 @@ def process_kml_to_dxf(kml_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     polygon, _ = extract_polygon_from_kml(kml_path)
 
-    gdf = load_buildings_from_gbf(polygon)
+    gdf = load_buildings_from_geofabrik(polygon)
     if gdf.empty:
         raise Exception("Tidak ada bangunan dalam area ini.")
 
     dxf_path = os.path.join(output_dir, "buildings_detected.dxf")
-    geojson_path = os.path.join(output_dir, "buildings_detected.geojson")
-    gdf.to_file(geojson_path, driver="GeoJSON")
     export_to_dxf_buildings(gdf.to_crs(TARGET_EPSG), dxf_path)
-    return dxf_path, geojson_path, True
+    return dxf_path, True
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="KML → DXF Auto Building Extractor", layout="wide")
-st.title("🏠 KML → DXF Building Extractor (Microsoft GBF)")
+st.title("🏠 KML → DXF Building Extractor (GeoFabrik OSM)")
 st.caption("Upload file .KML (batas area perumahan)")
 
 kml_file = st.file_uploader("Upload file .KML", type=["kml"])
@@ -91,13 +91,11 @@ if kml_file:
                 f.write(kml_file.read())
 
             output_dir = "/tmp/output"
-            dxf_path, geojson_path, ok = process_kml_to_dxf(temp_input, output_dir)
+            dxf_path, ok = process_kml_to_dxf(temp_input, output_dir)
 
             if ok:
                 st.success("✅ Berhasil diekspor ke DXF!")
                 with open(dxf_path, "rb") as f:
                     st.download_button("⬇️ Download DXF", data=f, file_name="buildings_detected.dxf")
-                with open(geojson_path, "rb") as f:
-                    st.download_button("⬇️ Download GeoJSON", data=f, file_name="buildings_detected.geojson")
         except Exception as e:
             st.error(f"❌ Terjadi kesalahan: {e}")
