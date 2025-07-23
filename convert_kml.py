@@ -59,10 +59,11 @@ def export_to_dxf(gdf, dxf_path):
                 shifted = [(x - offset_x, y - offset_y) for x, y in line.coords]
                 msp.add_lwpolyline(shifted)
 
-    # Tambahkan label tengah (opsional)
+    # Tambahkan teks "CENTER" di tengah area jalan
     center_x = (bounds[0] + bounds[2]) / 2 - offset_x
     center_y = (bounds[1] + bounds[3]) / 2 - offset_y
-    msp.add_text("CENTER", dxfattribs={'height': 5}).set_pos((center_x, center_y))
+    text = msp.add_text("CENTER", dxfattribs={'height': 5})
+    text.dxf.insert = (center_x, center_y)
 
     doc.saveas(dxf_path)
 
