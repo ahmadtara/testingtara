@@ -4,3 +4,7 @@ shapely
 osmnx
 ezdxf
 lxml
+gdal
+geos
+libspatialindex
+proj
