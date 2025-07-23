@@ -1,36 +1,13 @@
 import os
 import geopandas as gpd
-from shapely.geometry import shape, Polygon, MultiPolygon
-from fastkml import kml
-import ezdxf
-import pandas as pd
-import streamlit as st
-import requests
-import numpy as np
-import tempfile
-import matplotlib.pyplot as plt
+from shapely.geometry import Polygon, MultiPolygon
 from shapely.ops import unary_union
-import cv2
-from ultralytics import YOLO
-from PIL import Image
+import ezdxf
+import streamlit as st
+import tempfile
+import requests
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
-MODEL_PATH = "yolov8-building.pt"  # Path ke model segmentasi bangunan YOLOv8 (custom)
-MODEL_URL = "https://huggingface.co/spaces/ahmadtara/kotakrumahauto/resolve/main/yolov8-building.pt"
-HERE_API_KEY = "iWCrFicKYt9_AOCtg76h76MlqZkVTn94eHbBl_cE8m0"
-
-# --- Unduh model jika belum ada ---
-def ensure_model_exists():
-    if not os.path.exists(MODEL_PATH):
-        st.info("📥 Mengunduh model YOLOv8 dari Hugging Face...")
-        r = requests.get(MODEL_URL, stream=True)
-        if r.status_code == 200:
-            with open(MODEL_PATH, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        else:
-            st.error("❌ Gagal mengunduh model. Cek URL atau koneksi.")
-            st.stop()
 
 # --- Ekstrak Polygon Area dari KML ---
 def extract_polygon_from_kml(kml_path):
@@ -40,60 +17,26 @@ def extract_polygon_from_kml(kml_path):
         raise Exception("No Polygon found in KML")
     return unary_union(polygons.geometry), polygons.crs
 
-# --- Ambil Citra dari HERE Maps ---
-def download_static_map(polygon):
-    bounds = polygon.bounds
-    west, south, east, north = bounds
-    center_lat = (south + north) / 2
-    center_lon = (west + east) / 2
+# --- Ambil Bangunan dari Microsoft Global Building Footprints ---
+def load_buildings_from_gbf(polygon):
+    st.info("📦 Mengunduh dan memfilter bangunan dari Microsoft GBF...")
 
-    # Validasi koordinat
-    if not (-90 <= center_lat <= 90 and -180 <= center_lon <= 180):
-        raise Exception(f"Koordinat tidak valid: lat={center_lat}, lon={center_lon}")
-
-    url = (
-        f"https://image.maps.ls.hereapi.com/mia/1.6/mapview"
-        f"?c={center_lat},{center_lon}"
-        f"&z=18&h=640&w=640&t=sat&apiKey={HERE_API_KEY}"
-    )
-
-    st.info(f"🌐 Meminta citra dari HERE API:\n{url}")
-    response = requests.get(url)
-
-    if not response.ok:
-        st.error(f"❌ Response {response.status_code}: {response.text}")
-        raise Exception("Gagal mengunduh citra dari HERE Maps")
-
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-    temp_file.write(response.content)
+    url = "https://minedbuildings.blob.core.windows.net/global-buildings/dataset/Indonesia.geojson"
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".geojson")
+    r = requests.get(url)
+    if not r.ok:
+        raise Exception("Gagal mengunduh GBF untuk Indonesia")
+    temp_file.write(r.content)
     temp_file.close()
-    return Image.open(temp_file.name).convert("RGB")
 
-# --- Deteksi Bangunan dari Citra ---
-def detect_buildings_from_image(image_path):
-    ensure_model_exists()
-    model = YOLO(MODEL_PATH)
-    results = model(image_path)
-    masks = results[0].masks
-
-    if masks is None:
-        return []
-
-    polygons = []
-    for mask in masks.data:
-        mask_np = mask.cpu().numpy().astype(np.uint8) * 255
-        contours, _ = cv2.findContours(mask_np, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for cnt in contours:
-            if len(cnt) >= 3:
-                coords = [(int(p[0][0]), int(p[0][1])) for p in cnt]
-                poly = Polygon(coords)
-                if poly.is_valid:
-                    polygons.append(poly)
-
-    return polygons
+    gdf = gpd.read_file(temp_file.name)
+    gdf = gdf.to_crs("EPSG:4326")
+    gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+    gdf = gdf.clip(polygon)
+    return gdf
 
 # --- Ekspor ke DXF ---
-def export_to_dxf_buildings(gdf, dxf_path, polygon=None, polygon_crs=None):
+def export_to_dxf_buildings(gdf, dxf_path):
     doc = ezdxf.new()
     msp = doc.modelspace()
 
@@ -116,18 +59,11 @@ def export_to_dxf_buildings(gdf, dxf_path, polygon=None, polygon_crs=None):
 # --- Proses Utama ---
 def process_kml_to_dxf(kml_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
-    polygon, polygon_crs = extract_polygon_from_kml(kml_path)
+    polygon, _ = extract_polygon_from_kml(kml_path)
 
-    image = download_static_map(polygon)
-    image_path = os.path.join(output_dir, "map.png")
-    image.save(image_path)
-
-    building_polygons = detect_buildings_from_image(image_path)
-    if not building_polygons:
-        raise Exception("Tidak ada bangunan terdeteksi dari citra.")
-
-    gdf = gpd.GeoDataFrame(geometry=building_polygons, crs="EPSG:4326")
-    gdf = gdf.clip(polygon)
+    gdf = load_buildings_from_gbf(polygon)
+    if gdf.empty:
+        raise Exception("Tidak ada bangunan dalam area ini.")
 
     dxf_path = os.path.join(output_dir, "buildings_detected.dxf")
     geojson_path = os.path.join(output_dir, "buildings_detected.geojson")
@@ -136,14 +72,14 @@ def process_kml_to_dxf(kml_path, output_dir):
     return dxf_path, geojson_path, True
 
 # --- Streamlit UI ---
-st.set_page_config(page_title="KML → DXF Auto Building Detector", layout="wide")
-st.title("🌍 KML → DXF Auto Building Detector")
+st.set_page_config(page_title="KML → DXF Auto Building Extractor", layout="wide")
+st.title("🏠 KML → DXF Building Extractor (Microsoft GBF)")
 st.caption("Upload file .KML (batas area perumahan)")
 
 kml_file = st.file_uploader("Upload file .KML", type=["kml"])
 
 if kml_file:
-    with st.spinner("💫 Memproses file dan mendeteksi rumah..."):
+    with st.spinner("💫 Memproses file dan mengekstrak bangunan..."):
         try:
             temp_input = f"/tmp/{kml_file.name}"
             with open(temp_input, "wb") as f:
