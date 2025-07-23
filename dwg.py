@@ -5,7 +5,7 @@ from shapely.ops import unary_union
 import ezdxf
 import streamlit as st
 import tempfile
-import requests
+import osmnx as ox
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
@@ -17,30 +17,15 @@ def extract_polygon_from_kml(kml_path):
         raise Exception("No Polygon found in KML")
     return unary_union(polygons.geometry), polygons.crs
 
-# --- Ambil Bangunan dari GeoFabrik OSM Indonesia ---
-def load_buildings_from_geofabrik(polygon):
-    st.info("📦 Mengunduh dan memfilter bangunan dari GeoFabrik Indonesia...")
-    url = "https://download.geofabrik.de/asia/indonesia-latest-free.shp.zip"
-    temp_zip_path = os.path.join(tempfile.gettempdir(), "indonesia-latest-free.shp.zip")
-
-    if not os.path.exists(temp_zip_path):
-        try:
-            with requests.get(url, stream=True, timeout=120) as r:
-                r.raise_for_status()
-                with open(temp_zip_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-        except requests.RequestException as e:
-            raise Exception(f"Gagal mengunduh data GeoFabrik: {e}")
-
+# --- Ambil Bangunan dari OSM via Overpass ---
+def load_buildings_from_osm(polygon):
+    st.info("📦 Mengambil bangunan dari OSM via Overpass...")
     try:
-        gdf = gpd.read_file(f"zip://{temp_zip_path}!buildings.shp")
-        gdf = gdf.to_crs("EPSG:4326")
+        gdf = ox.geometries_from_polygon(polygon, tags={"building": True})
         gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
-        gdf = gdf.clip(polygon)
         return gdf
     except Exception as e:
-        raise Exception("Gagal membaca bangunan dari data GeoFabrik: buildings.shp tidak ditemukan")
+        raise Exception(f"Gagal mengambil bangunan dari OSM: {e}")
 
 # --- Ekspor ke DXF ---
 def export_to_dxf_buildings(gdf, dxf_path):
@@ -68,7 +53,7 @@ def process_kml_to_dxf(kml_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     polygon, _ = extract_polygon_from_kml(kml_path)
 
-    gdf = load_buildings_from_geofabrik(polygon)
+    gdf = load_buildings_from_osm(polygon)
     if gdf.empty:
         raise Exception("Tidak ada bangunan dalam area ini.")
 
@@ -78,7 +63,7 @@ def process_kml_to_dxf(kml_path, output_dir):
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="KML → DXF Auto Building Extractor", layout="wide")
-st.title("🏠 KML → DXF Building Extractor (GeoFabrik OSM)")
+st.title("🏠 KML → DXF Building Extractor (OSM Overpass)")
 st.caption("Upload file .KML (batas area perumahan)")
 
 kml_file = st.file_uploader("Upload file .KML", type=["kml"])
