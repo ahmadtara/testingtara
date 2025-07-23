@@ -16,7 +16,21 @@ from PIL import Image
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 MODEL_PATH = "yolov8-building.pt"  # Path ke model segmentasi bangunan YOLOv8 (custom)
+MODEL_URL = "https://huggingface.co/spaces/ahmadtara/kotakrumahauto/resolve/main/yolov8-building.pt"
 GOOGLE_MAPS_API_KEY = "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"
+
+# --- Unduh model jika belum ada ---
+def ensure_model_exists():
+    if not os.path.exists(MODEL_PATH):
+        st.info("📥 Mengunduh model YOLOv8 dari Hugging Face...")
+        r = requests.get(MODEL_URL, stream=True)
+        if r.status_code == 200:
+            with open(MODEL_PATH, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        else:
+            st.error("❌ Gagal mengunduh model. Cek URL atau koneksi.")
+            st.stop()
 
 # --- Ekstrak Polygon Area dari KML ---
 def extract_polygon_from_kml(kml_path):
@@ -53,9 +67,7 @@ def download_static_map(polygon):
 
 # --- Deteksi Bangunan dari Citra ---
 def detect_buildings_from_image(image_path):
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(f"❌ Model {MODEL_PATH} tidak ditemukan.")
-
+    ensure_model_exists()
     model = YOLO(MODEL_PATH)
     results = model(image_path)
     masks = results[0].masks
