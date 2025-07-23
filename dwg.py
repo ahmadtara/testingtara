@@ -1,47 +1,43 @@
 import os
 import geopandas as gpd
-from shapely.geometry import Polygon, MultiPolygon, shape
+from shapely.geometry import shape, Polygon, MultiPolygon
 from shapely.ops import unary_union
 import ezdxf
 import streamlit as st
 import tempfile
-import pandas as pd
 import json
-import requests
 
-TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
+TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S (Indonesia Barat)
 
 # --- Ekstrak Polygon Area dari KML ---
 def extract_polygon_from_kml(kml_path):
     gdf = gpd.read_file(kml_path)
     polygons = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
     if polygons.empty:
-        raise Exception("No Polygon found in KML")
+        raise Exception("❌ Tidak ditemukan geometri Polygon dalam file KML.")
     return unary_union(polygons.geometry), polygons.crs
 
-# --- Ambil Bangunan dari GBF HuggingFace (GeoJSONL Format) ---
-def load_buildings_from_gbf(polygon, gbf_url):
-    st.info("📦 Mengambil bangunan dari GBF (GeoJSONL) via HuggingFace...")
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            r = requests.get(gbf_url)
-            r.raise_for_status()
+# --- Ambil Bangunan dari File GeoJSONL Lokal ---
+def load_buildings_from_local_csv(polygon, local_path):
+    st.info("📦 Mengambil bangunan dari file lokal (GeoJSONL)...")
+    geometries = []
+    with open(local_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                geom = shape(obj["geometry"])
+                if geom.is_valid and geom.within(polygon):
+                    geometries.append(geom)
+            except json.JSONDecodeError:
+                continue
 
-            geometries = []
-            for line in r.iter_lines():
-                if line:
-                    obj = json.loads(line)
-                    geom = shape(obj["geometry"])
-                    if geom.is_valid and geom.within(polygon):
-                        geometries.append(geom)
+    if not geometries:
+        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
-            if not geometries:
-                return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
-
-            gdf = gpd.GeoDataFrame(geometry=gpd.GeoSeries(geometries), crs="EPSG:4326")
-            return gdf
-    except Exception as e:
-        raise Exception(f"Gagal membaca GBF dari HuggingFace: {e}")
+    return gpd.GeoDataFrame(geometry=gpd.GeoSeries(geometries), crs="EPSG:4326")
 
 # --- Ekspor ke DXF ---
 def export_to_dxf_buildings(gdf, dxf_path):
@@ -65,13 +61,13 @@ def export_to_dxf_buildings(gdf, dxf_path):
     doc.saveas(dxf_path)
 
 # --- Proses Utama ---
-def process_kml_to_dxf(kml_path, output_dir, gbf_url):
+def process_kml_to_dxf(kml_path, output_dir, local_csv_path):
     os.makedirs(output_dir, exist_ok=True)
     polygon, _ = extract_polygon_from_kml(kml_path)
+    gdf = load_buildings_from_local_csv(polygon, local_csv_path)
 
-    gdf = load_buildings_from_gbf(polygon, gbf_url)
     if gdf.empty:
-        raise Exception("Tidak ada bangunan dalam area ini.")
+        raise Exception("Tidak ada bangunan ditemukan di dalam area yang dipilih.")
 
     dxf_path = os.path.join(output_dir, "buildings_detected.dxf")
     export_to_dxf_buildings(gdf.to_crs(TARGET_EPSG), dxf_path)
@@ -79,21 +75,25 @@ def process_kml_to_dxf(kml_path, output_dir, gbf_url):
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="KML → DXF Auto Building Extractor", layout="wide")
-st.title("🏠 KML → DXF Building Extractor (GBF HuggingFace)")
-st.caption("Upload file .KML (batas area perumahan)")
+st.title("🏠 KML → DXF Building Extractor")
+st.caption("Upload file .KML (batas area perumahan) dan file GeoJSONL (.csv) hasil deteksi bangunan")
 
-kml_file = st.file_uploader("Upload file .KML", type=["kml"])
-gbf_url = st.text_input("Masukkan URL GBF GeoJSONL dari HuggingFace:", placeholder="https://huggingface.co/.../file.jsonl")
+kml_file = st.file_uploader("📍 Upload file .KML", type=["kml"])
+gbf_file = st.file_uploader("🏗️ Upload file GBF (GeoJSONL dalam .csv)", type=["csv", "jsonl"])
 
-if kml_file and gbf_url:
+if kml_file and gbf_file:
     with st.spinner("💫 Memproses file dan mengekstrak bangunan..."):
         try:
-            temp_input = f"/tmp/{kml_file.name}"
-            with open(temp_input, "wb") as f:
+            temp_kml = f"/tmp/{kml_file.name}"
+            with open(temp_kml, "wb") as f:
                 f.write(kml_file.read())
 
+            temp_gbf = f"/tmp/{gbf_file.name}"
+            with open(temp_gbf, "wb") as f:
+                f.write(gbf_file.read())
+
             output_dir = "/tmp/output"
-            dxf_path, ok = process_kml_to_dxf(temp_input, output_dir, gbf_url)
+            dxf_path, ok = process_kml_to_dxf(temp_kml, output_dir, temp_gbf)
 
             if ok:
                 st.success("✅ Berhasil diekspor ke DXF!")
