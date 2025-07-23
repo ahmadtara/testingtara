@@ -1,10 +1,10 @@
-streamlit>=1.27
-opencv-python-headless
-pillow
-ultralytics>=8.0.100
-shapely
+streamlit
 geopandas
+shapely
+fastkml
 ezdxf
 requests
+pillow
 matplotlib
-fastkml
+opencv-python-headless
+ultralytics==8.1.14
