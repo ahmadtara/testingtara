@@ -1,10 +1,11 @@
 # convert_kml.py
 import os
 import geopandas as gpd
-from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
+from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineString
 from fastkml import kml
 import osmnx as ox
 import ezdxf
+import streamlit as st  # untuk debug di Streamlit
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
@@ -14,6 +15,9 @@ def extract_polygon_from_kml(kml_path):
 
     k = kml.KML()
     k.from_string(doc)
+
+    # Tampilkan isi KML (opsional debug)
+    st.code(k.to_string(prettyprint=True), language="xml")
 
     polygons = []
 
@@ -25,6 +29,10 @@ def extract_polygon_from_kml(kml_path):
         elif isinstance(geom, GeometryCollection):
             for g in geom.geoms:
                 extract_polygons(g)
+        elif isinstance(geom, LineString):
+            # Jika garis tertutup, konversi ke Polygon
+            if geom.is_ring:
+                polygons.append(Polygon(geom))
 
     def recurse(feats):
         for feat in feats:
@@ -33,10 +41,10 @@ def extract_polygon_from_kml(kml_path):
             if hasattr(feat, "features"):
                 recurse(feat.features)
 
-    recurse(k.features)  # FIXED
+    recurse(k.features)  # FIXED: k.features bukan fungsi
 
     if not polygons:
-        raise Exception("No Polygon found in KML")
+        raise Exception("No Polygon or closed LineString found in KML")
 
     return polygons[0]
 
@@ -67,13 +75,11 @@ def process_kml_to_dxf(kml_path, output_dir):
     geojson_path = os.path.join(output_dir, "roadmap_osm.geojson")
     dxf_path = os.path.join(output_dir, "roadmap_osm.dxf")
 
-    if not roads.empty:
-        roads_utm = roads.to_crs(TARGET_EPSG)
-        roads_utm.to_file(geojson_path, driver="GeoJSON")
-        export_to_dxf(roads_utm, dxf_path)
-        jalan_ditemukan = True
-    else:
-        jalan_ditemukan = False
+    if roads.empty:
         raise Exception("Tidak ada jalan ditemukan di dalam area polygon.")
 
-    return dxf_path, geojson_path, jalan_ditemukan
+    roads_utm = roads.to_crs(TARGET_EPSG)
+    roads_utm.to_file(geojson_path, driver="GeoJSON")
+    export_to_dxf(roads_utm, dxf_path)
+
+    return dxf_path, geojson_path, True
