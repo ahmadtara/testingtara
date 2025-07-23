@@ -42,16 +42,33 @@ def get_osm_roads(polygon: Polygon):
 def export_to_dxf(gdf, dxf_path):
     doc = ezdxf.new()
     msp = doc.modelspace()
+
+    if gdf.empty:
+        raise Exception("❌ Tidak ada geometri yang dapat diekspor ke DXF.")
+
+    # Dapatkan offset agar objek terlihat dekat (0,0)
+    bounds = gdf.total_bounds  # [minx, miny, maxx, maxy]
+    offset_x, offset_y = bounds[0], bounds[1]
+
     for geom in gdf.geometry:
         if geom.geom_type == "LineString":
-            msp.add_lwpolyline(list(geom.coords))
+            shifted = [(x - offset_x, y - offset_y) for x, y in geom.coords]
+            msp.add_lwpolyline(shifted)
         elif geom.geom_type == "MultiLineString":
             for line in geom.geoms:
-                msp.add_lwpolyline(list(line.coords))
+                shifted = [(x - offset_x, y - offset_y) for x, y in line.coords]
+                msp.add_lwpolyline(shifted)
+
+    # Tambahkan label tengah (opsional)
+    center_x = (bounds[0] + bounds[2]) / 2 - offset_x
+    center_y = (bounds[1] + bounds[3]) / 2 - offset_y
+    msp.add_text("CENTER", dxfattribs={'height': 5}).set_pos((center_x, center_y))
+
     doc.saveas(dxf_path)
 
 def process_kml_to_dxf(kml_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
+
     polygon = extract_polygon_from_kml(kml_path)
     roads = get_osm_roads(polygon)
 
