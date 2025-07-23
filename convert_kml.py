@@ -48,9 +48,9 @@ def extract_polygon_from_kml(kml_path):
             if hasattr(feat, "geometry") and feat.geometry is not None:
                 extract_polygons(feat.geometry)
             if hasattr(feat, "features"):
-                recurse(feat.features)
+                recurse(feat.features())  # ✅ fix: call features()
 
-    recurse(k.features)
+    recurse(k.features())  # ✅ fix: call features()
 
     if not polygons:
         raise Exception("No Polygon found in KML")
