@@ -5,7 +5,7 @@ from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineStri
 from fastkml import kml
 import osmnx as ox
 import ezdxf
-import streamlit as st  # untuk debug di Streamlit
+import streamlit as st
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
@@ -16,7 +16,7 @@ def extract_polygon_from_kml(kml_path):
     k = kml.KML()
     k.from_string(doc)
 
-    # Tampilkan isi KML (opsional debug)
+    # Debug struktur isi KML
     st.code(k.to_string(prettyprint=True), language="xml")
 
     polygons = []
@@ -30,18 +30,21 @@ def extract_polygon_from_kml(kml_path):
             for g in geom.geoms:
                 extract_polygons(g)
         elif isinstance(geom, LineString):
-            # Jika garis tertutup, konversi ke Polygon
             if geom.is_ring:
                 polygons.append(Polygon(geom))
 
     def recurse(feats):
         for feat in feats:
+            # Cari fitur di dalam struktur nested (Document, Folder, dst)
+            try:
+                subfeats = list(feat.features()) if callable(feat.features) else list(feat.features)
+                recurse(subfeats)
+            except Exception:
+                pass
             if hasattr(feat, "geometry") and feat.geometry is not None:
                 extract_polygons(feat.geometry)
-            if hasattr(feat, "features"):
-                recurse(feat.features)
 
-    recurse(k.features)  # FIXED: k.features bukan fungsi
+    recurse(k.features)
 
     if not polygons:
         raise Exception("No Polygon or closed LineString found in KML")
