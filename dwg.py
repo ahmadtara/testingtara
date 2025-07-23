@@ -42,12 +42,14 @@ def extract_polygon_from_kml(kml_path):
 
 # --- Ambil Citra dari HERE Maps ---
 def download_static_map(polygon):
-    from shapely.geometry import box
-
     bounds = polygon.bounds
     west, south, east, north = bounds
     center_lat = (south + north) / 2
     center_lon = (west + east) / 2
+
+    # Validasi koordinat
+    if not (-90 <= center_lat <= 90 and -180 <= center_lon <= 180):
+        raise Exception(f"Koordinat tidak valid: lat={center_lat}, lon={center_lon}")
 
     url = (
         f"https://image.maps.ls.hereapi.com/mia/1.6/mapview"
@@ -55,8 +57,11 @@ def download_static_map(polygon):
         f"&z=18&h=640&w=640&t=sat&apiKey={HERE_API_KEY}"
     )
 
+    st.info(f"🌐 Meminta citra dari HERE API:\n{url}")
     response = requests.get(url)
+
     if not response.ok:
+        st.error(f"❌ Response {response.status_code}: {response.text}")
         raise Exception("Gagal mengunduh citra dari HERE Maps")
 
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
