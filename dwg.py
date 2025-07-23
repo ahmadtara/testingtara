@@ -22,14 +22,19 @@ def load_buildings_from_gbf(polygon):
     st.info("📦 Mengunduh dan memfilter bangunan dari Microsoft GBF...")
 
     url = "https://minedbuildings.blob.core.windows.net/global-buildings/v1/geojson/IND.geojson.zip"
-    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-    r = requests.get(url)
-    if not r.ok:
-        raise Exception("Gagal mengunduh GBF untuk Indonesia")
-    temp_zip.write(r.content)
-    temp_zip.close()
+    temp_zip_path = os.path.join(tempfile.gettempdir(), "IND.geojson.zip")
 
-    gdf = gpd.read_file(f"zip://{temp_zip.name}")
+    if not os.path.exists(temp_zip_path):
+        try:
+            with requests.get(url, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                with open(temp_zip_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+        except requests.RequestException as e:
+            raise Exception(f"Gagal mengunduh GBF untuk Indonesia: {e}")
+
+    gdf = gpd.read_file(f"zip://{temp_zip_path}")
     gdf = gdf.to_crs("EPSG:4326")
     gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
     gdf = gdf.clip(polygon)
