@@ -72,7 +72,11 @@ def export_to_dxf(gdf, dxf_path, polygon=None, polygon_crs=None):
         if geom.is_empty or not geom.is_valid:
             continue
 
-        merged = linemerge(geom)
+        if isinstance(geom, LineString):
+            merged = geom
+        else:
+            merged = linemerge(geom)
+
         if isinstance(merged, (LineString, MultiLineString)):
             buffered = merged.buffer(width / 2, resolution=8, join_style=2)
             all_lines.append(merged)
