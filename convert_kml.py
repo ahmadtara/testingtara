@@ -5,7 +5,7 @@ from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineStri
 from fastkml import kml
 import osmnx as ox
 import ezdxf
-from shapely.ops import unary_union, linemerge, snap, split
+from shapely.ops import unary_union, linemerge, snap, split, polygonize
 import pandas as pd
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
@@ -47,7 +47,7 @@ def extract_polygon_from_kml(kml_path):
 
 def get_osm_roads(polygon):
     try:
-        tags = {"highway": True}
+        tags = {"highway": True}  # Ambil semua jalan
         roads = ox.features_from_polygon(polygon, tags=tags)
         roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])]
         roads = roads.explode(index_parts=False)
@@ -66,9 +66,7 @@ def export_to_dxf(gdf, dxf_path):
     msp = doc.modelspace()
 
     grouped_buffers = {}
-    total_features = len(gdf)
-    success_count = 0
-    fail_count = 0
+    all_lines = []
 
     for _, row in gdf.iterrows():
         geom = row.geometry
@@ -92,34 +90,26 @@ def export_to_dxf(gdf, dxf_path):
                         continue
                     if not line.is_valid or line.is_empty:
                         continue
-
                     buffer = line.buffer(width / 2, resolution=8, join_style=2)
                     if buffer.is_empty or not buffer.is_valid:
                         continue
                     if layer not in grouped_buffers:
                         grouped_buffers[layer] = []
                     grouped_buffers[layer].append(buffer)
-                    success_count += 1
-
-            except Exception as e:
-                fail_count += 1
+                    all_lines.append(line)
+            except:
                 continue
-
-    print(f"✅ Buffer sukses: {success_count} dari {total_features}, gagal: {fail_count}")
 
     if not grouped_buffers:
         raise Exception("❌ Tidak ada garis valid untuk diekspor.")
 
-    all_bounds = [geom.bounds for buffers in grouped_buffers.values() for geom in buffers]
-    min_x = min(b[0] for b in all_bounds)
-    min_y = min(b[1] for b in all_bounds)
+    min_x = min((geom.bounds[0] for buffers in grouped_buffers.values() for geom in buffers), default=0)
+    min_y = min((geom.bounds[1] for buffers in grouped_buffers.values() for geom in buffers), default=0)
 
     for layer, buffers in grouped_buffers.items():
         union = unary_union(buffers)
         outlines = []
 
-        if union.is_empty:
-            continue
         if union.geom_type == 'Polygon':
             outlines = [union.exterior]
         elif union.geom_type == 'MultiPolygon':
