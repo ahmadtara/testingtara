@@ -45,6 +45,17 @@ def get_osm_roads(polygon):
     return roads
 
 
+def strip_z(geom):
+    if geom.geom_type == "LineString" and geom.has_z:
+        return LineString([(x, y) for x, y, *_ in geom.coords])
+    elif geom.geom_type == "MultiLineString":
+        return MultiLineString([
+            LineString([(x, y) for x, y, *_ in line.coords]) if line.has_z else line
+            for line in geom.geoms
+        ])
+    return geom
+
+
 def export_to_dxf(gdf, dxf_path, polygon=None, polygon_crs=None):
     doc = ezdxf.new()
     msp = doc.modelspace()
@@ -54,7 +65,7 @@ def export_to_dxf(gdf, dxf_path, polygon=None, polygon_crs=None):
     buffer_layers = []
 
     for _, row in gdf.iterrows():
-        geom = row.geometry
+        geom = strip_z(row.geometry)
         hwy = str(row.get("highway", ""))
         layer, width = classify_layer(hwy)
 
