@@ -71,12 +71,21 @@ def export_to_dxf(gdf, dxf_path):
                 left, right = offset_lines(line, width)
                 all_lines.extend([(left, layer_name), (right, layer_name)])
 
-    merged_lines = unary_union([line for line, _ in all_lines if line is not None])
+    all_coords = []
+    for line, _ in all_lines:
+        if line and hasattr(line, "coords"):
+            all_coords.extend(line.coords)
 
-    if isinstance(merged_lines, (LineString, MultiLineString)):
-        merged_geoms = [merged_lines] if isinstance(merged_lines, LineString) else merged_lines.geoms
-        for line in merged_geoms:
-            msp.add_lwpolyline(list(line.coords))
+    if not all_coords:
+        raise Exception("Tidak ada garis valid untuk diekspor.")
+
+    xs, ys = zip(*all_coords)
+    min_x, min_y = min(xs), min(ys)
+
+    for line, layer_name in all_lines:
+        if line and hasattr(line, "coords"):
+            shifted_coords = [(x - min_x, y - min_y) for x, y in line.coords]
+            msp.add_lwpolyline(shifted_coords, dxfattribs={"layer": layer_name})
 
     doc.set_modelspace_vport(height=10000)
     doc.saveas(dxf_path)
