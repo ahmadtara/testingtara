@@ -24,7 +24,6 @@ ROAD_WIDTHS = {
     "path": 10,
 }
 
-
 def extract_polygon_from_kml(kml_path):
     gdf = gpd.read_file(kml_path)
     polygons = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
@@ -33,7 +32,6 @@ def extract_polygon_from_kml(kml_path):
         raise Exception("No Polygon found in KML")
 
     return unary_union(polygons.geometry)
-
 
 def get_osm_roads(polygon):
     try:
@@ -44,39 +42,44 @@ def get_osm_roads(polygon):
     except Exception:
         return gpd.GeoDataFrame()
 
-
 def offset_lines(line: LineString, width: float):
     try:
-        left = line.parallel_offset(width / 2, side='left', resolution=2, join_style=2)
-        right = line.parallel_offset(width / 2, side='right', resolution=2, join_style=2)
+        left = line.parallel_offset(width / 2, side='left', resolution=16, join_style=1, mitre_limit=5.0)
+        right = line.parallel_offset(width / 2, side='right', resolution=16, join_style=1, mitre_limit=5.0)
         return left, right
     except Exception:
         return line, line
-
 
 def export_to_dxf(gdf, dxf_path):
     doc = ezdxf.new()
     msp = doc.modelspace()
 
+    all_lines = []
+
     for idx, row in gdf.iterrows():
         geom = row.geometry
-        highway_type = row.get("highway", "unknown")
+        highway_type = str(row.get("highway", "unknown"))
         width = ROAD_WIDTHS.get(highway_type, 10)
+        layer_name = highway_type.upper()
 
         if geom.geom_type == "LineString":
             left, right = offset_lines(geom, width)
-            msp.add_lwpolyline(list(left.coords), dxfattribs={"layer": highway_type})
-            msp.add_lwpolyline(list(right.coords), dxfattribs={"layer": highway_type})
+            all_lines.extend([(left, layer_name), (right, layer_name)])
 
         elif geom.geom_type == "MultiLineString":
             for line in geom.geoms:
                 left, right = offset_lines(line, width)
-                msp.add_lwpolyline(list(left.coords), dxfattribs={"layer": highway_type})
-                msp.add_lwpolyline(list(right.coords), dxfattribs={"layer": highway_type})
+                all_lines.extend([(left, layer_name), (right, layer_name)])
+
+    merged_lines = unary_union([line for line, _ in all_lines if line is not None])
+
+    if isinstance(merged_lines, (LineString, MultiLineString)):
+        merged_geoms = [merged_lines] if isinstance(merged_lines, LineString) else merged_lines.geoms
+        for line in merged_geoms:
+            msp.add_lwpolyline(list(line.coords))
 
     doc.set_modelspace_vport(height=10000)
     doc.saveas(dxf_path)
-
 
 def process_kml_to_dxf(kml_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
