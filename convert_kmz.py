@@ -1,5 +1,5 @@
+# convert_kml.py
 import os
-import zipfile
 import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from fastkml import kml
@@ -8,16 +8,7 @@ import ezdxf
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
-def extract_polygon_from_kmz(kmz_path):
-    with zipfile.ZipFile(kmz_path, 'r') as zf:
-        for f in zf.namelist():
-            if f.endswith('.kml'):
-                zf.extract(f, "/tmp")
-                kml_path = os.path.join("/tmp", f)
-                break
-        else:
-            raise Exception("KML file not found in KMZ")
-
+def extract_polygon_from_kml(kml_path):
     with open(kml_path, 'rt', encoding='utf-8') as file:
         doc = file.read()
 
@@ -36,7 +27,7 @@ def extract_polygon_from_kmz(kmz_path):
                 extract_polygons(g)
 
     def recurse(feats):
-        for feat in list(feats):
+        for feat in feats:
             if hasattr(feat, "geometry") and feat.geometry is not None:
                 extract_polygons(feat.geometry)
             if hasattr(feat, "features"):
@@ -68,9 +59,9 @@ def export_to_dxf(gdf, dxf_path):
                 msp.add_lwpolyline(list(line.coords))
     doc.saveas(dxf_path)
 
-def process_kmz_to_dxf(kmz_path, output_dir):
+def process_kml_to_dxf(kml_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
-    polygon = extract_polygon_from_kmz(kmz_path)
+    polygon = extract_polygon_from_kml(kml_path)
     roads = get_osm_roads(polygon)
 
     geojson_path = os.path.join(output_dir, "roadmap_osm.geojson")
