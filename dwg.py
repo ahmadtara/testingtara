@@ -10,16 +10,7 @@ import numpy as np
 import tempfile
 import matplotlib.pyplot as plt
 from shapely.ops import unary_union
-
-# Uninstall opencv-python if exists and install headless version (streamlit cloud fix)
-try:
-    import cv2
-except ImportError:
-    import subprocess
-    subprocess.run(["pip", "uninstall", "-y", "opencv-python"])
-    subprocess.run(["pip", "install", "opencv-python-headless"])
-    import cv2
-
+import cv2
 from ultralytics import YOLO
 from PIL import Image
 
