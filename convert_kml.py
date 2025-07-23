@@ -37,6 +37,7 @@ def get_osm_roads(polygon):
         roads = roads.explode(index_parts=False)
         roads = roads[~roads.geometry.is_empty & roads.geometry.notnull()]
         roads = roads.dropna(subset=['geometry'])
+        roads = roads.clip(polygon)  # pastikan hanya dalam polygon
         roads["geometry"] = roads["geometry"].apply(lambda g: snap(g, g, tolerance=0.0001))
         roads = roads.reset_index(drop=True)
         return roads
@@ -54,7 +55,7 @@ def clean_intersections(lines):
     return merged
 
 
-def export_to_dxf(gdf, dxf_path):
+def export_to_dxf(gdf, dxf_path, polygon=None):
     doc = ezdxf.new()
     msp = doc.modelspace()
 
@@ -86,6 +87,17 @@ def export_to_dxf(gdf, dxf_path):
         coords = [(x - min_x, y - min_y) for x, y in outline.coords]
         msp.add_lwpolyline(coords, dxfattribs={"layer": "ROADS"})
 
+    # Tambahkan boundary polygon ke layer "BOUNDARY"
+    if polygon:
+        if polygon.geom_type == 'Polygon':
+            exterior = polygon.exterior
+            coords = [(x - min_x, y - min_y) for x, y in exterior.coords]
+            msp.add_lwpolyline(coords, dxfattribs={"layer": "BOUNDARY"})
+        elif polygon.geom_type == 'MultiPolygon':
+            for p in polygon.geoms:
+                coords = [(x - min_x, y - min_y) for x, y in p.exterior.coords]
+                msp.add_lwpolyline(coords, dxfattribs={"layer": "BOUNDARY"})
+
     doc.set_modelspace_vport(height=10000)
     doc.saveas(dxf_path)
 
@@ -101,7 +113,7 @@ def process_kml_to_dxf(kml_path, output_dir):
     if not roads.empty:
         roads_utm = roads.to_crs(TARGET_EPSG)
         roads_utm.to_file(geojson_path, driver="GeoJSON")
-        export_to_dxf(roads_utm, dxf_path)
+        export_to_dxf(roads_utm, dxf_path, polygon=polygon.to_crs(TARGET_EPSG))
         return dxf_path, geojson_path, True
     else:
         raise Exception("Tidak ada jalan ditemukan di dalam area polygon.")
