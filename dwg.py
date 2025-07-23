@@ -21,15 +21,15 @@ def extract_polygon_from_kml(kml_path):
 def load_buildings_from_gbf(polygon):
     st.info("📦 Mengunduh dan memfilter bangunan dari Microsoft GBF...")
 
-    url = "https://minedbuildings.blob.core.windows.net/global-buildings/dataset/Indonesia.geojson"
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".geojson")
+    url = "https://minedbuildings.blob.core.windows.net/global-buildings/v1/geojson/IND.geojson.zip"
+    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
     r = requests.get(url)
     if not r.ok:
         raise Exception("Gagal mengunduh GBF untuk Indonesia")
-    temp_file.write(r.content)
-    temp_file.close()
+    temp_zip.write(r.content)
+    temp_zip.close()
 
-    gdf = gpd.read_file(temp_file.name)
+    gdf = gpd.read_file(f"zip://{temp_zip.name}")
     gdf = gdf.to_crs("EPSG:4326")
     gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
     gdf = gdf.clip(polygon)
