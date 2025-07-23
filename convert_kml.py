@@ -28,7 +28,7 @@ def extract_polygon_from_kml(kml_path):
     polygons = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
     if polygons.empty:
         raise Exception("No Polygon found in KML")
-    return unary_union(polygons.geometry)
+    return unary_union(polygons.geometry), polygons.crs
 
 def get_osm_roads(polygon):
     tags = {"highway": True}
@@ -41,7 +41,7 @@ def get_osm_roads(polygon):
     roads = roads.reset_index(drop=True)
     return roads
 
-def export_to_dxf(gdf, dxf_path, polygon=None):
+def export_to_dxf(gdf, dxf_path, polygon=None, polygon_crs=None):
     doc = ezdxf.new()
     msp = doc.modelspace()
 
@@ -89,8 +89,8 @@ def export_to_dxf(gdf, dxf_path, polygon=None):
             coords = [(x - min_x, y - min_y) for x, y in outline.coords]
             msp.add_lwpolyline(coords, dxfattribs={"layer": layer})
 
-    if polygon:
-        poly = polygon.to_crs(TARGET_EPSG)
+    if polygon is not None and polygon_crs is not None:
+        poly = gpd.GeoSeries([polygon], crs=polygon_crs).to_crs(TARGET_EPSG).iloc[0]
         if poly.geom_type == 'Polygon':
             coords = [(x - min_x, y - min_y) for x, y in poly.exterior.coords]
             msp.add_lwpolyline(coords, dxfattribs={"layer": "BOUNDARY"})
@@ -104,7 +104,7 @@ def export_to_dxf(gdf, dxf_path, polygon=None):
 
 def process_kml_to_dxf(kml_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
-    polygon = extract_polygon_from_kml(kml_path)
+    polygon, polygon_crs = extract_polygon_from_kml(kml_path)
     roads = get_osm_roads(polygon)
 
     geojson_path = os.path.join(output_dir, "roadmap_osm.geojson")
@@ -113,7 +113,7 @@ def process_kml_to_dxf(kml_path, output_dir):
     if not roads.empty:
         roads_utm = roads.to_crs(TARGET_EPSG)
         roads_utm.to_file(geojson_path, driver="GeoJSON")
-        export_to_dxf(roads_utm, dxf_path, polygon=polygon)
+        export_to_dxf(roads_utm, dxf_path, polygon=polygon, polygon_crs=polygon_crs)
         return dxf_path, geojson_path, True
     else:
         raise Exception("Tidak ada jalan ditemukan di dalam area polygon.")
@@ -126,7 +126,7 @@ st.caption("Upload file .KML (area batas cluster)")
 kml_file = st.file_uploader("Upload file .KML", type=["kml"])
 
 if kml_file:
-    with st.spinner("📡 Memproses file..."):
+    with st.spinner("🛁 Memproses file..."):
         try:
             temp_input = f"/tmp/{kml_file.name}"
             with open(temp_input, "wb") as f:
