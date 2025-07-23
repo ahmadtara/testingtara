@@ -26,37 +26,13 @@ ROAD_WIDTHS = {
 
 
 def extract_polygon_from_kml(kml_path):
-    with open(kml_path, 'rb') as file:
-        doc = file.read()
+    gdf = gpd.read_file(kml_path)
+    polygons = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
 
-    k = kml.KML()
-    k.from_string(doc)
-
-    polygons = []
-
-    def extract_polygons(geom):
-        if isinstance(geom, Polygon):
-            polygons.append(geom)
-        elif isinstance(geom, MultiPolygon):
-            polygons.extend(list(geom.geoms))
-        elif isinstance(geom, GeometryCollection):
-            for g in geom.geoms:
-                extract_polygons(g)
-
-    def recurse(feats):
-        for feat in list(feats):
-            if hasattr(feat, "geometry") and feat.geometry is not None:
-                geom = feat.geometry  # trigger lazy parsing
-                extract_polygons(geom)
-            if hasattr(feat, "features"):
-                recurse(feat.features)  # ✅ fix: call features()
-
-    recurse(k.features)  # ✅ fix: call features()
-
-    if not polygons:
+    if polygons.empty:
         raise Exception("No Polygon found in KML")
 
-    return unary_union(polygons)
+    return unary_union(polygons.geometry)
 
 
 def get_osm_roads(polygon):
