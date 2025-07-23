@@ -1,7 +1,6 @@
+streamlit
 geopandas
 shapely
-fastkml
 osmnx
 ezdxf
-pyproj
-fiona
+lxml
