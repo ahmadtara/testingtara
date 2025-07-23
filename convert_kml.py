@@ -10,6 +10,7 @@ import pandas as pd
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 DEFAULT_WIDTH = 6
+MIN_LINE_LENGTH = 1.0  # meter
 
 
 def classify_layer(hwy):
@@ -46,7 +47,7 @@ def extract_polygon_from_kml(kml_path):
 
 def get_osm_roads(polygon):
     try:
-        tags = {"highway": True}  # Ambil semua jalan meskipun tidak punya width/lanes
+        tags = {"highway": True}
         roads = ox.features_from_polygon(polygon, tags=tags)
         roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])]
         roads = roads.explode(index_parts=False)
@@ -78,18 +79,29 @@ def export_to_dxf(gdf, dxf_path):
         if geom.geom_type in ["LineString", "MultiLineString"]:
             try:
                 merged = linemerge(geom)
-                if merged.is_empty or not merged.is_valid:
-                    fail_count += 1
-                    continue
-                buffer = merged.buffer(width / 2, resolution=8, join_style=2)
-                if buffer.is_empty or not buffer.is_valid:
-                    fail_count += 1
-                    continue
-                if layer not in grouped_buffers:
-                    grouped_buffers[layer] = []
-                grouped_buffers[layer].append(buffer)
-                success_count += 1
-            except:
+
+                if isinstance(merged, (GeometryCollection, MultiLineString)):
+                    lines = [g for g in merged.geoms if isinstance(g, LineString)]
+                elif isinstance(merged, LineString):
+                    lines = [merged]
+                else:
+                    lines = []
+
+                for line in lines:
+                    if line.length < MIN_LINE_LENGTH:
+                        continue
+                    if not line.is_valid or line.is_empty:
+                        continue
+
+                    buffer = line.buffer(width / 2, resolution=8, join_style=2)
+                    if buffer.is_empty or not buffer.is_valid:
+                        continue
+                    if layer not in grouped_buffers:
+                        grouped_buffers[layer] = []
+                    grouped_buffers[layer].append(buffer)
+                    success_count += 1
+
+            except Exception as e:
                 fail_count += 1
                 continue
 
