@@ -5,12 +5,10 @@ from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineStri
 from fastkml import kml
 import osmnx as ox
 import ezdxf
-from shapely.ops import unary_union, linemerge, snap
+from shapely.ops import unary_union, linemerge, snap, polygonize
 import pandas as pd
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
-
-# Lebar jalan default mirip CadMapper
 DEFAULT_WIDTH = 6
 
 
@@ -62,53 +60,47 @@ def get_osm_roads(polygon):
         return gpd.GeoDataFrame()
 
 
-def offset_lines(line: LineString, width: float):
-    try:
-        left = line.parallel_offset(width / 2, side='left', resolution=32, join_style=2)
-        right = line.parallel_offset(width / 2, side='right', resolution=32, join_style=2)
-        return left, right
-    except Exception:
-        return None, None
-
-
 def export_to_dxf(gdf, dxf_path):
     doc = ezdxf.new()
     msp = doc.modelspace()
 
-    all_lines = []
-    for idx, row in gdf.iterrows():
+    grouped_buffers = {}
+
+    for _, row in gdf.iterrows():
         geom = row.geometry
         hwy = str(row.get("highway", "unknown"))
         width = get_dynamic_width(row)
         layer, _ = classify_layer(hwy)
 
-        if geom.geom_type == "LineString":
-            left, right = offset_lines(geom, width)
-            if left and right:
-                all_lines.extend([(left, layer), (right, layer)])
+        if geom.geom_type in ["LineString", "MultiLineString"]:
+            try:
+                merged = linemerge(geom)
+                buffer = merged.buffer(width / 2, resolution=8, join_style=2)
+                if layer not in grouped_buffers:
+                    grouped_buffers[layer] = []
+                grouped_buffers[layer].append(buffer)
+            except:
+                continue
 
-        elif geom.geom_type == "MultiLineString":
-            for line in geom.geoms:
-                left, right = offset_lines(line, width)
-                if left and right:
-                    all_lines.extend([(left, layer), (right, layer)])
-
-    all_coords = []
-    for line, _ in all_lines:
-        if line and hasattr(line, "coords"):
-            all_coords.extend(line.coords)
-
-    if not all_coords:
+    if not grouped_buffers:
         raise Exception("❌ Tidak ada garis valid untuk diekspor.")
 
-    min_x = min(x for x, y in all_coords)
-    min_y = min(y for x, y in all_coords)
+    all_bounds = [geom.bounds for buffers in grouped_buffers.values() for geom in buffers]
+    min_x = min(b[0] for b in all_bounds)
+    min_y = min(b[1] for b in all_bounds)
 
-    for line, layer in all_lines:
-        if line and hasattr(line, "coords"):
-            shifted = [(x - min_x, y - min_y) for x, y in line.coords]
-            if len(shifted) > 1:
-                msp.add_lwpolyline(shifted, dxfattribs={"layer": layer})
+    for layer, buffers in grouped_buffers.items():
+        union = unary_union(buffers)
+        if union.geom_type == 'Polygon':
+            outlines = [union.exterior]
+        elif union.geom_type == 'MultiPolygon':
+            outlines = [poly.exterior for poly in union.geoms]
+        else:
+            continue
+
+        for outline in outlines:
+            shifted = [(x - min_x, y - min_y) for x, y in outline.coords]
+            msp.add_lwpolyline(shifted, dxfattribs={"layer": layer})
 
     doc.set_modelspace_vport(height=10000)
     doc.saveas(dxf_path)
