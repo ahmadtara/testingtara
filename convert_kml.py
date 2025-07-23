@@ -5,7 +5,7 @@ from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineStri
 from fastkml import kml
 import osmnx as ox
 import ezdxf
-from shapely.ops import unary_union, linemerge, snap
+from shapely.ops import unary_union, linemerge, snap, split
 import pandas as pd
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
@@ -46,7 +46,7 @@ def extract_polygon_from_kml(kml_path):
 
 def get_osm_roads(polygon):
     try:
-        tags = {"highway": True, "width": True, "lanes": True}
+        tags = {"highway": True}  # Ambil semua jalan meskipun tidak punya width/lanes
         roads = ox.features_from_polygon(polygon, tags=tags)
         roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])]
         roads = roads.explode(index_parts=False)
@@ -82,7 +82,7 @@ def export_to_dxf(gdf, dxf_path):
                     fail_count += 1
                     continue
                 buffer = merged.buffer(width / 2, resolution=8, join_style=2)
-                if buffer.is_empty:
+                if buffer.is_empty or not buffer.is_valid:
                     fail_count += 1
                     continue
                 if layer not in grouped_buffers:
@@ -113,7 +113,7 @@ def export_to_dxf(gdf, dxf_path):
         elif union.geom_type == 'MultiPolygon':
             outlines = [poly.exterior for poly in union.geoms if poly.exterior is not None]
         elif union.geom_type == 'GeometryCollection':
-            outlines = [g.exterior for g in union.geoms if hasattr(g, 'exterior')]
+            outlines = [g.exterior for g in union.geoms if hasattr(g, 'exterior') and g.exterior is not None]
 
         for outline in outlines:
             if outline is None:
