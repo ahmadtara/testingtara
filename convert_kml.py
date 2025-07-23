@@ -26,7 +26,7 @@ ROAD_WIDTHS = {
 
 
 def extract_polygon_from_kml(kml_path):
-    with open(kml_path, 'rt', encoding='utf-8') as file:
+    with open(kml_path, 'rb') as file:
         doc = file.read()
 
     k = kml.KML()
