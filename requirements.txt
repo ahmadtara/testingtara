@@ -1,7 +1,11 @@
-streamlit
 geopandas
-shapely
-osmnx
-ezdxf
-lxml
 fastkml
+ezdxf
+streamlit
+requests
+opencv-python
+numpy
+ultralytics
+pillow
+matplotlib
+shapely
