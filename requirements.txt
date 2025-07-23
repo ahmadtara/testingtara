@@ -6,3 +6,4 @@ shapely
 ezdxf
 matplotlib
 requests
+fastkml
