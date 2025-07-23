@@ -1,11 +1,11 @@
-import os
+""import os
 import zipfile
 import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineString, MultiLineString
 from fastkml import kml
 import osmnx as ox
 import ezdxf
-from shapely.ops import unary_union
+from shapely.ops import unary_union, linemerge, snap
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 
@@ -38,14 +38,16 @@ def get_osm_roads(polygon):
         tags = {"highway": True}
         roads = ox.features_from_polygon(polygon, tags=tags)
         roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])]
+        roads = roads.explode(index_parts=False)
+        roads["geometry"] = roads["geometry"].apply(lambda g: snap(g, g, tolerance=0.0001))
         return roads
     except Exception:
         return gpd.GeoDataFrame()
 
 def offset_lines(line: LineString, width: float):
     try:
-        left = line.parallel_offset(width / 2, side='left', resolution=16, join_style=1, mitre_limit=5.0)
-        right = line.parallel_offset(width / 2, side='right', resolution=16, join_style=1, mitre_limit=5.0)
+        left = line.parallel_offset(width / 2, side='left', resolution=16, join_style=2)
+        right = line.parallel_offset(width / 2, side='right', resolution=16, join_style=2)
         return left, right
     except Exception:
         return line, line
@@ -85,7 +87,8 @@ def export_to_dxf(gdf, dxf_path):
     for line, layer_name in all_lines:
         if line and hasattr(line, "coords"):
             shifted_coords = [(x - min_x, y - min_y) for x, y in line.coords]
-            msp.add_lwpolyline(shifted_coords, dxfattribs={"layer": layer_name})
+            if len(shifted_coords) > 1:
+                msp.add_lwpolyline(shifted_coords, dxfattribs={"layer": layer_name})
 
     doc.set_modelspace_vport(height=10000)
     doc.saveas(dxf_path)
