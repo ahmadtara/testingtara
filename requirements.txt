@@ -3,9 +3,9 @@ fastkml
 ezdxf
 streamlit
 requests
-opencv-python
 numpy
 ultralytics
 pillow
 matplotlib
 shapely
+opencv-python-headless
