@@ -7,19 +7,21 @@ import pandas as pd
 import streamlit as st
 import requests
 import numpy as np
-from ultralytics import YOLO
-from PIL import Image
 import tempfile
 import matplotlib.pyplot as plt
 from shapely.ops import unary_union
 
-# Handle opencv-python for Streamlit Cloud compatibility
+# Uninstall opencv-python if exists and install headless version (streamlit cloud fix)
 try:
     import cv2
 except ImportError:
     import subprocess
+    subprocess.run(["pip", "uninstall", "-y", "opencv-python"])
     subprocess.run(["pip", "install", "opencv-python-headless"])
     import cv2
+
+from ultralytics import YOLO
+from PIL import Image
 
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 MODEL_PATH = "yolov8-building.pt"  # Path ke model segmentasi bangunan YOLOv8 (custom)
@@ -60,6 +62,9 @@ def download_static_map(polygon):
 
 # --- Deteksi Bangunan dari Citra ---
 def detect_buildings_from_image(image_path):
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(f"❌ Model {MODEL_PATH} tidak ditemukan.")
+
     model = YOLO(MODEL_PATH)
     results = model(image_path)
     masks = results[0].masks
