@@ -91,22 +91,22 @@ def export_to_dxf(gdf, dxf_path, polygon=None, polygon_crs=None):
     if not outlines:
         raise Exception("❌ Polygonize gagal menghasilkan outline.")
 
-    bounds = [pt for geom in outlines for pt in geom.exterior.coords]
+    bounds = [(pt[0], pt[1]) for geom in outlines for pt in geom.exterior.coords]
     min_x = min(x for x, y in bounds)
     min_y = min(y for x, y in bounds)
 
     for outline in outlines:
-        coords = [(x - min_x, y - min_y) for x, y in outline.exterior.coords]
+        coords = [(pt[0] - min_x, pt[1] - min_y) for pt in outline.exterior.coords]
         msp.add_lwpolyline(coords, dxfattribs={"layer": "ROADS"})
 
     if polygon is not None and polygon_crs is not None:
         poly = gpd.GeoSeries([polygon], crs=polygon_crs).to_crs(TARGET_EPSG).iloc[0]
         if poly.geom_type == 'Polygon':
-            coords = [(x - min_x, y - min_y) for x, y in poly.exterior.coords]
+            coords = [(pt[0] - min_x, pt[1] - min_y) for pt in poly.exterior.coords]
             msp.add_lwpolyline(coords, dxfattribs={"layer": "BOUNDARY"})
         elif poly.geom_type == 'MultiPolygon':
             for p in poly.geoms:
-                coords = [(x - min_x, y - min_y) for x, y in p.exterior.coords]
+                coords = [(pt[0] - min_x, pt[1] - min_y) for pt in p.exterior.coords]
                 msp.add_lwpolyline(coords, dxfattribs={"layer": "BOUNDARY"})
 
     doc.set_modelspace_vport(height=10000)
