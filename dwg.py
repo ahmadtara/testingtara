@@ -17,7 +17,7 @@ from PIL import Image
 TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
 MODEL_PATH = "yolov8-building.pt"  # Path ke model segmentasi bangunan YOLOv8 (custom)
 MODEL_URL = "https://huggingface.co/spaces/ahmadtara/kotakrumahauto/resolve/main/yolov8-building.pt"
-GOOGLE_MAPS_API_KEY = "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"
+HERE_API_KEY = "iWCrFicKYt9_AOCtg76h76MlqZkVTn94eHbBl_cE8m0"
 
 # --- Unduh model jika belum ada ---
 def ensure_model_exists():
@@ -40,7 +40,7 @@ def extract_polygon_from_kml(kml_path):
         raise Exception("No Polygon found in KML")
     return unary_union(polygons.geometry), polygons.crs
 
-# --- Ambil Citra Google Maps dari Polygon ---
+# --- Ambil Citra dari HERE Maps ---
 def download_static_map(polygon):
     from shapely.geometry import box
 
@@ -50,15 +50,14 @@ def download_static_map(polygon):
     center_lon = (west + east) / 2
 
     url = (
-        f"https://maps.googleapis.com/maps/api/staticmap"
-        f"?center={center_lat},{center_lon}"
-        f"&zoom=18&size=640x640&maptype=satellite"
-        f"&key={GOOGLE_MAPS_API_KEY}"
+        f"https://image.maps.ls.hereapi.com/mia/1.6/mapview"
+        f"?c={center_lat},{center_lon}"
+        f"&z=18&h=640&w=640&t=sat&apiKey={HERE_API_KEY}"
     )
 
     response = requests.get(url)
     if not response.ok:
-        raise Exception("Gagal mengunduh citra dari Google Maps")
+        raise Exception("Gagal mengunduh citra dari HERE Maps")
 
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     temp_file.write(response.content)
