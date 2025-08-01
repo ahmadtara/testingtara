@@ -1,75 +1,72 @@
-import os
+import tkinter as tk
+from tkinter import filedialog, messagebox
 from fastkml import kml
-from shapely.geometry import Point
 from pyproj import Transformer
 import ezdxf
+import os
 
-# Folder target yang ingin diambil
-target_folders = {
-    'FDT',
-    'NEW POLE 7-3',
-    'NEW POLE 7-4',
-    'EXISTING POLE EMR 7-4',
-    'FAT',
-    'HP COVER'
-}
+# Target folder yang diambil
+target_folders = {'FDT', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'FAT', 'HP COVER'}
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)  # WGS84 ke UTM zona 60S
 
-# Fungsi parsing KML dan ambil titik dari folder tertentu
-def extract_points_from_kml(kml_content):
+def parse_kml(file_path):
+    with open(file_path, 'rt', encoding='utf-8') as f:
+        doc = f.read()
     k = kml.KML()
-    k.from_string(kml_content)
+    k.from_string(doc)
 
-    extracted_points = []
+    result = []
 
-    def extract_features(features, current_folder=None):
-        for feature in features:
-            name = getattr(feature, 'name', '')
-            if hasattr(feature, 'geometry') and isinstance(feature.geometry, Point):
-                if current_folder in target_folders:
-                    coords = (feature.geometry.x, feature.geometry.y)
-                    extracted_points.append((current_folder, name, coords))
-            elif hasattr(feature, 'features') and callable(feature.features):
-                sub_features = list(feature.features())
-                extract_features(sub_features, name)
+    def extract_features(features):
+        for f in features:
+            if hasattr(f, 'features'):
+                fname = f.name
+                if fname in target_folders:
+                    for placemark in f.features():
+                        if hasattr(placemark, 'geometry') and placemark.geometry.geom_type == 'Point':
+                            lon, lat = placemark.geometry.x, placemark.geometry.y
+                            easting, northing = transformer.transform(lon, lat)
+                            result.append({
+                                'folder': fname,
+                                'placemark': placemark.name,
+                                'easting': round(easting, 3),
+                                'northing': round(northing, 3)
+                            })
+                extract_features(f.features())
+    extract_features(k.features())
+    return result
 
-    root_features = list(k.features())
-    extract_features(root_features)
-
-    return extracted_points
-
-# Fungsi konversi ke UTM Zona 60S (EPSG:32760)
-def to_utm60(lon, lat):
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
-    x, y = transformer.transform(lon, lat)
-    return x, y
-
-# Simpan ke file DXF
-def save_to_dxf(data, output_path='output.dxf'):
-    doc = ezdxf.new()
+def generate_dxf(data, output_path):
+    doc = ezdxf.new(dxfversion='R2010')
     msp = doc.modelspace()
-    for folder, name, (lon, lat) in data:
-        x, y = to_utm60(lon, lat)
+    for item in data:
+        x, y = item['easting'], item['northing']
+        label = f"{item['placemark']}\n({item['folder']})"
         msp.add_point((x, y))
-        msp.add_text(
-            f"{name}",
-            dxfattribs={"height": 2.5}
-        ).set_pos((x + 2, y + 2))
+        msp.add_text(label, dxfattribs={'height': 2.5}).set_pos((x, y + 3), align='CENTER')
     doc.saveas(output_path)
-    print(f"✅ DXF berhasil disimpan: {output_path}")
 
-# Contoh pemakaian manual: Upload file dan proses
-if __name__ == '__main__':
-    input_kml = "contoh.kml"  # Ganti dengan nama file KML hasil upload
-    if not os.path.exists(input_kml):
-        print(f"⚠️ File tidak ditemukan: {input_kml}")
-    else:
-        with open(input_kml, 'r', encoding='utf-8') as f:
-            kml_content = f.read()
+def select_file():
+    file_path = filedialog.askopenfilename(filetypes=[("KML files", "*.kml")])
+    if file_path:
+        try:
+            data = parse_kml(file_path)
+            output_name = os.path.splitext(os.path.basename(file_path))[0] + "_output.dxf"
+            output_path = os.path.join(os.path.dirname(file_path), output_name)
+            generate_dxf(data, output_path)
+            messagebox.showinfo("Berhasil", f"✅ File DXF berhasil dibuat:\n{output_path}")
+        except Exception as e:
+            messagebox.showerror("Gagal", f"❌ Terjadi kesalahan:\n{e}")
 
-        titik = extract_points_from_kml(kml_content)
-        if not titik:
-            print("⚠️ Tidak ada titik ditemukan dari folder yang ditentukan.")
-        else:
-            for f, n, (lon, lat) in titik:
-                print(f"[{f}] {n}: ({lon}, {lat})")
-            save_to_dxf(titik, "hasil_output_utm60.dxf")
+# GUI
+root = tk.Tk()
+root.title("KML ➜ DXF Converter (UTM 60S)")
+root.geometry("400x200")
+
+label = tk.Label(root, text="Klik tombol di bawah untuk memilih file .kml", font=("Arial", 12))
+label.pack(pady=30)
+
+btn = tk.Button(root, text="Upload KML dan Convert ke DXF", command=select_file, font=("Arial", 11), bg="green", fg="white")
+btn.pack()
+
+root.mainloop()
