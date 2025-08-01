@@ -1,57 +1,75 @@
-import streamlit as st
+import os
 from fastkml import kml
-import ezdxf
 from shapely.geometry import Point
 from pyproj import Transformer
-import tempfile
+import ezdxf
 
-def extract_points_from_kml_file(kml_content):
+# Folder target yang ingin diambil
+target_folders = {
+    'FDT',
+    'NEW POLE 7-3',
+    'NEW POLE 7-4',
+    'EXISTING POLE EMR 7-4',
+    'FAT',
+    'HP COVER'
+}
+
+# Fungsi untuk parsing KML dan ambil titik dari folder tertentu
+def extract_points_from_kml(kml_path):
+    with open(kml_path, 'r', encoding='utf-8') as f:
+        kml_content = f.read()
+
     k = kml.KML()
     k.from_string(kml_content)
 
-    points = []
+    extracted_points = []
 
-    def recurse_features(features):
+    def extract_features(features, current_folder=None):
         for feature in features:
+            name = getattr(feature, 'name', '')
             if hasattr(feature, 'geometry') and isinstance(feature.geometry, Point):
-                name = getattr(feature, 'name', 'TANPA_NAMA')
-                coords = (feature.geometry.x, feature.geometry.y)
-                points.append((name, coords))
-            if hasattr(feature, 'features'):
-                recurse_features(feature.features())
+                if current_folder in target_folders:
+                    coords = (feature.geometry.x, feature.geometry.y)
+                    extracted_points.append((current_folder, name, coords))
+            elif hasattr(feature, 'features') and callable(feature.features):
+                sub_features = list(feature.features())
+                extract_features(sub_features, name)
 
-    recurse_features(k.features())
-    return points
+    root_features = list(k.features())
+    extract_features(root_features)
 
-def convert_to_dxf(points, output_path):
+    return extracted_points
+
+# Fungsi konversi ke UTM Zona 60S
+def to_utm60(lon, lat):
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
+    x, y = transformer.transform(lon, lat)
+    return x, y
+
+# Simpan hasil ke DXF
+def save_to_dxf(data, output_path='output.dxf'):
     doc = ezdxf.new()
     msp = doc.modelspace()
-
-    # Konversi koordinat dari WGS84 ke UTM zona 60N
-    transformer = Transformer.from_crs("epsg:4326", "epsg:32660", always_xy=True)
-
-    for name, (lon, lat) in points:
-        x, y = transformer.transform(lon, lat)
-        msp.add_circle((x, y), radius=1.0)
-        msp.add_text(name, dxfattribs={"height": 1.5}).set_pos((x + 2, y + 2))
-
+    for folder, name, (lon, lat) in data:
+        x, y = to_utm60(lon, lat)
+        msp.add_point((x, y))
+        msp.add_text(
+            f"{name}",
+            dxfattribs={"height": 2.5}
+        ).set_pos((x + 2, y + 2))
     doc.saveas(output_path)
+    print(f"DXF saved: {output_path}")
 
-# Streamlit App
-st.title("Konversi Titik KML ke DXF (UTM Zona 60)")
-
-uploaded_file = st.file_uploader("Unggah File KML", type=["kml"])
-if uploaded_file is not None:
-    try:
-        content = uploaded_file.read().decode("utf-8")
-        points = extract_points_from_kml_file(content)
-
-        if points:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp_dxf:
-                convert_to_dxf(points, tmp_dxf.name)
-                st.success("✅ Berhasil dikonversi ke DXF.")
-                st.download_button("⬇️ Unduh DXF", data=open(tmp_dxf.name, "rb"), file_name="hasil_konversi.dxf")
+# Jalankan
+if __name__ == '__main__':
+    input_kml = "contoh.kml"  # Ganti sesuai nama file
+    if not os.path.exists(input_kml):
+        print(f"File tidak ditemukan: {input_kml}")
+    else:
+        titik = extract_points_from_kml(input_kml)
+        if not titik:
+            print("⚠️ Tidak ada titik ditemukan dari folder yang ditentukan.")
         else:
-            st.warning("⚠️ Tidak ada titik ditemukan dalam file KML.")
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses file: {e}")
+            for f, n, (lon, lat) in titik:
+                print(f"[{f}] {n}: ({lon}, {lat})")
+            save_to_dxf(titik, "hasil_output_utm60.dxf")
