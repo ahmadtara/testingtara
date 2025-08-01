@@ -1,4 +1,5 @@
-fastkml==0.11
-shapely>=1.7.1
-ezdxf==1.1.1
-pygeoif==0.7
+streamlit
+fastkml
+shapely
+ezdxf
+pygeoif
