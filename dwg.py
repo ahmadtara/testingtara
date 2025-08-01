@@ -1,78 +1,55 @@
-import streamlit as st
+import os
 from fastkml import kml
 from shapely.geometry import Point
 import ezdxf
-from pyproj import Transformer
-import tempfile
+import pyproj
 
-# Folder target yang ingin dibaca
-TARGET_FOLDERS = [
-    "EXISTING POLE EMR 7-4", "FAT", "HP COVER", "NEW POLE 7-3", "NEW POLE 7-4", "FDT"
-]
+# Folder target (huruf kapital)
+TARGET_FOLDERS = ['FDT', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'FAT', 'HP COVER']
 
-# Ubah koordinat lon/lat ke UTM zona 60S (EPSG:32760)
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
+# Proyeksi ke UTM zona 60S
+wgs84 = pyproj.CRS("EPSG:4326")
+utm60 = pyproj.CRS("EPSG:32760")
+project = pyproj.Transformer.from_crs(wgs84, utm60, always_xy=True).transform
 
-def extract_points_from_kml_file(file_obj):
+def extract_points_from_kml_file(kml_path):
+    with open(kml_path, 'r', encoding='utf-8') as f:
+        doc = f.read()
+
     k = kml.KML()
-    k.from_string(file_obj.read())
+    k.from_string(doc)
+
     result = []
 
-    def recursive_extract(features, path_stack=None):
-        if path_stack is None:
-            path_stack = []
-
+    def extract_features(features, current_path=""):
         for f in features:
-            name = getattr(f, 'name', '')
-            new_path = path_stack + [name.upper()]
-
-            # Jika ini titik
+            folder_path = f"{current_path}/{getattr(f, 'name', '')}".upper()
             if isinstance(f, kml.Placemark) and isinstance(f.geometry, Point):
-                for target in TARGET_FOLDERS:
-                    if target in new_path:
-                        lon, lat = f.geometry.x, f.geometry.y
-                        utm_x, utm_y = transformer.transform(lon, lat)
-                        result.append((f.name or "TANPA_NAMA", utm_x, utm_y))
-                        break  # tidak perlu dicek ke target lainnya
+                if any(folder in folder_path for folder in TARGET_FOLDERS):
+                    result.append((f.name, f.geometry.x, f.geometry.y, folder_path))
+            elif hasattr(f, 'features'):
+                extract_features(f.features(), folder_path)
 
-            # Jika ada anak fitur
-            if hasattr(f, 'features'):
-                recursive_extract(f.features, new_path)
-
-    recursive_extract(k.features)
+    extract_features(k.features())
     return result
 
-def export_to_dxf(points, output_path):
-    doc = ezdxf.new(dxfversion="R2010")
+def convert_to_dxf(points, output_path="output.dxf"):
+    doc = ezdxf.new(dxfversion='R2010')
     msp = doc.modelspace()
 
-    for name, x, y in points:
-        msp.add_point((x, y), dxfattribs={'layer': 'TITIK'})
-        msp.add_text(name, dxfattribs={'height': 2.5}).set_pos((x + 2, y + 2))
+    for name, lon, lat, folder in points:
+        x, y = project(lon, lat)
+        msp.add_circle((x, y), radius=0.5)
+        msp.add_text(name, dxfattribs={'height': 2.5}).set_pos((x, y + 1), align='CENTER')
 
     doc.saveas(output_path)
-
-def run_kml_extraction_app():
-    st.title("📍 Konversi Titik KML ke DXF (UTM Zone 60S)")
-
-    uploaded_file = st.file_uploader("📤 Upload file .KML", type=["kml"])
-
-    if uploaded_file:
-        with st.spinner("🔍 Mengekstrak dan mengubah koordinat..."):
-            try:
-                points = extract_points_from_kml_file(uploaded_file)
-
-                if not points:
-                    st.warning("⚠️ Tidak ada titik ditemukan dalam folder yang ditentukan.")
-                    return
-
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmpfile:
-                    export_to_dxf(points, tmpfile.name)
-                    st.success(f"✅ Berhasil! {len(points)} titik dikonversi ke UTM.")
-                    st.download_button("⬇️ Download File DXF", data=open(tmpfile.name, "rb"), file_name="output_titik_utm60.dxf")
-
-            except Exception as e:
-                st.error(f"❌ Terjadi kesalahan saat memproses file: {e}")
+    print(f"✅ File berhasil diekspor ke {output_path}")
 
 if __name__ == "__main__":
-    run_kml_extraction_app()
+    file_path = "SRI MERANTI RW 16 PEKANBARU.kml"  # Ganti jika nama beda
+    titik = extract_points_from_kml_file(file_path)
+
+    if titik:
+        convert_to_dxf(titik, "hasil_output.dxf")
+    else:
+        print("⚠️ Tidak ada titik ditemukan dalam folder yang ditentukan.")
