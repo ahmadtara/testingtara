@@ -5,7 +5,7 @@ import ezdxf
 from pyproj import Transformer
 import tempfile
 
-# Folder yang ingin diambil
+# Folder target yang ingin dibaca
 TARGET_FOLDERS = [
     "EXISTING POLE EMR 7-4", "FAT", "HP COVER", "NEW POLE 7-3", "NEW POLE 7-4", "FDT"
 ]
@@ -18,19 +18,24 @@ def extract_points_from_kml_file(file_obj):
     k.from_string(file_obj.read())
     result = []
 
-    def recursive_extract(features, current_path=""):
+    def recursive_extract(features, path_stack=None):
+        if path_stack is None:
+            path_stack = []
+
         for f in features:
             name = getattr(f, 'name', '')
-            new_path = f"{current_path}/{name}".upper()
+            new_path = path_stack + [name.upper()]
 
-            # Ambil hanya Placemark berisi titik, dan path-nya cocok
+            # Jika ini titik
             if isinstance(f, kml.Placemark) and isinstance(f.geometry, Point):
-                if any(folder in new_path for folder in TARGET_FOLDERS):
-                    lon, lat = f.geometry.x, f.geometry.y
-                    utm_x, utm_y = transformer.transform(lon, lat)
-                    result.append((f.name or "TANPA_NAMA", utm_x, utm_y))
+                for target in TARGET_FOLDERS:
+                    if target in new_path:
+                        lon, lat = f.geometry.x, f.geometry.y
+                        utm_x, utm_y = transformer.transform(lon, lat)
+                        result.append((f.name or "TANPA_NAMA", utm_x, utm_y))
+                        break  # tidak perlu dicek ke target lainnya
 
-            # Jika masih ada nested feature
+            # Jika ada anak fitur
             if hasattr(f, 'features'):
                 recursive_extract(f.features, new_path)
 
