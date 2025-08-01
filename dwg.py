@@ -1,68 +1,57 @@
-import os
+import streamlit as st
 from fastkml import kml
-from shapely.geometry import Point
 import ezdxf
-import pyproj
+from shapely.geometry import Point
+from pyproj import Transformer
+import tempfile
 
-# Folder target yang harus dicari di path
-TARGET_FOLDERS = ['FDT', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'FAT', 'HP COVER']
-
-# Proyeksi koordinat dari WGS84 ke UTM zona 60S
-wgs84 = pyproj.CRS("EPSG:4326")
-utm60 = pyproj.CRS("EPSG:32760")  # UTM Zone 60S
-project = pyproj.Transformer.from_crs(wgs84, utm60, always_xy=True).transform
-
-# Fungsi untuk mencari file .kml terbaru di /mnt/data/
-def find_latest_kml(folder="/mnt/data"):
-    kml_files = [f for f in os.listdir(folder) if f.lower().endswith(".kml")]
-    if not kml_files:
-        return None
-    kml_files.sort(key=lambda x: os.path.getmtime(os.path.join(folder, x)), reverse=True)
-    return os.path.join(folder, kml_files[0])
-
-def extract_points_from_kml_file(kml_path):
-    with open(kml_path, 'r', encoding='utf-8') as f:
-        doc = f.read()
-
+def extract_points_from_kml_file(kml_content):
     k = kml.KML()
-    k.from_string(doc)
+    k.from_string(kml_content)
 
-    result = []
+    points = []
 
-    def extract_features(features, current_path=""):
-        for f in features:
-            folder_path = f"{current_path}/{getattr(f, 'name', '')}".upper()
-            if isinstance(f, kml.Placemark) and isinstance(f.geometry, Point):
-                if any(folder in folder_path for folder in TARGET_FOLDERS):
-                    result.append((f.name, f.geometry.x, f.geometry.y, folder_path))
-            elif hasattr(f, 'features'):
-                extract_features(f.features(), folder_path)
+    def recurse_features(features):
+        for feature in features:
+            if hasattr(feature, 'geometry') and isinstance(feature.geometry, Point):
+                name = getattr(feature, 'name', 'TANPA_NAMA')
+                coords = (feature.geometry.x, feature.geometry.y)
+                points.append((name, coords))
+            if hasattr(feature, 'features'):
+                recurse_features(feature.features())
 
-    extract_features(k.features())
-    return result
+    recurse_features(k.features())
+    return points
 
-def convert_to_dxf(points, output_path="/mnt/data/hasil_output.dxf"):
-    doc = ezdxf.new(dxfversion='R2010')
+def convert_to_dxf(points, output_path):
+    doc = ezdxf.new()
     msp = doc.modelspace()
 
-    for name, lon, lat, folder in points:
-        x, y = project(lon, lat)
-        msp.add_circle((x, y), radius=0.5)
-        msp.add_text(name or "TANPA NAMA", dxfattribs={'height': 2.5}).set_pos((x, y + 1), align='CENTER')
+    # Konversi koordinat dari WGS84 ke UTM zona 60N
+    transformer = Transformer.from_crs("epsg:4326", "epsg:32660", always_xy=True)
+
+    for name, (lon, lat) in points:
+        x, y = transformer.transform(lon, lat)
+        msp.add_circle((x, y), radius=1.0)
+        msp.add_text(name, dxfattribs={"height": 1.5}).set_pos((x + 2, y + 2))
 
     doc.saveas(output_path)
-    print(f"✅ DXF berhasil disimpan: {output_path}")
 
-# Jalankan program utama
-if __name__ == "__main__":
-    file_path = find_latest_kml()
-    if not file_path:
-        print("❌ Tidak ada file .kml ditemukan di folder /mnt/data")
-    else:
-        print(f"📄 Memproses file: {file_path}")
-        titik = extract_points_from_kml_file(file_path)
+# Streamlit App
+st.title("Konversi Titik KML ke DXF (UTM Zona 60)")
 
-        if titik:
-            convert_to_dxf(titik)
+uploaded_file = st.file_uploader("Unggah File KML", type=["kml"])
+if uploaded_file is not None:
+    try:
+        content = uploaded_file.read().decode("utf-8")
+        points = extract_points_from_kml_file(content)
+
+        if points:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp_dxf:
+                convert_to_dxf(points, tmp_dxf.name)
+                st.success("✅ Berhasil dikonversi ke DXF.")
+                st.download_button("⬇️ Unduh DXF", data=open(tmp_dxf.name, "rb"), file_name="hasil_konversi.dxf")
         else:
-            print("⚠️ Tidak ada titik ditemukan dalam folder yang ditentukan.")
+            st.warning("⚠️ Tidak ada titik ditemukan dalam file KML.")
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat memproses file: {e}")
