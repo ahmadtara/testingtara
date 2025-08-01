@@ -14,11 +14,8 @@ target_folders = {
     'HP COVER'
 }
 
-# Fungsi untuk parsing KML dan ambil titik dari folder tertentu
-def extract_points_from_kml(kml_path):
-    with open(kml_path, 'r', encoding='utf-8') as f:
-        kml_content = f.read()
-
+# Fungsi parsing KML dan ambil titik dari folder tertentu
+def extract_points_from_kml(kml_content):
     k = kml.KML()
     k.from_string(kml_content)
 
@@ -40,13 +37,13 @@ def extract_points_from_kml(kml_path):
 
     return extracted_points
 
-# Fungsi konversi ke UTM Zona 60S
+# Fungsi konversi ke UTM Zona 60S (EPSG:32760)
 def to_utm60(lon, lat):
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
     x, y = transformer.transform(lon, lat)
     return x, y
 
-# Simpan hasil ke DXF
+# Simpan ke file DXF
 def save_to_dxf(data, output_path='output.dxf'):
     doc = ezdxf.new()
     msp = doc.modelspace()
@@ -58,15 +55,18 @@ def save_to_dxf(data, output_path='output.dxf'):
             dxfattribs={"height": 2.5}
         ).set_pos((x + 2, y + 2))
     doc.saveas(output_path)
-    print(f"DXF saved: {output_path}")
+    print(f"✅ DXF berhasil disimpan: {output_path}")
 
-# Jalankan
+# Contoh pemakaian manual: Upload file dan proses
 if __name__ == '__main__':
-    input_kml = "contoh.kml"  # Ganti sesuai nama file
+    input_kml = "contoh.kml"  # Ganti dengan nama file KML hasil upload
     if not os.path.exists(input_kml):
-        print(f"File tidak ditemukan: {input_kml}")
+        print(f"⚠️ File tidak ditemukan: {input_kml}")
     else:
-        titik = extract_points_from_kml(input_kml)
+        with open(input_kml, 'r', encoding='utf-8') as f:
+            kml_content = f.read()
+
+        titik = extract_points_from_kml(kml_content)
         if not titik:
             print("⚠️ Tidak ada titik ditemukan dari folder yang ditentukan.")
         else:
