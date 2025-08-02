@@ -1,47 +1,32 @@
 import streamlit as st
-import cv2
+from PIL import Image
 import numpy as np
 import ezdxf
 import io
-from PIL import Image
 import pyproj
+from ultralytics import YOLO
 
-st.title("Ekstraksi Garis Bangunan dari Gambar Google Maps (UTM Zone 60S)")
+st.title("Deteksi Bangunan dari Gambar Google Maps dengan YOLOv8")
 
-uploaded_file = st.file_uploader("Upload Gambar Google Maps", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Upload Gambar Peta (Google Maps)", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert('RGB')
     image_np = np.array(image)
     st.image(image_np, caption="Gambar Asli", use_column_width=True)
 
-    # --- Deteksi bangunan ---
-    gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
-    blur = cv2.GaussianBlur(gray, (3, 3), 0)
-    edges = cv2.Canny(blur, 50, 150)
+    # --- Load YOLOv8 model ---
+    model = YOLO("yolov8-building.pt")  # Ganti dengan path model kamu
+    results = model(image_np)
 
-    # Morph untuk menutup celah
-    kernel = np.ones((3, 3), np.uint8)
-    dilated = cv2.dilate(edges, kernel, iterations=2)
-    closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, kernel, iterations=2)
+    boxes = results[0].boxes.xyxy.cpu().numpy()  # [x1, y1, x2, y2]
+    st.success(f"Terdeteksi {len(boxes)} bangunan.")
 
-    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    building_paths = []
-    for cnt in contours:
-        approx = cv2.approxPolyDP(cnt, 0.01 * cv2.arcLength(cnt, True), True)
-        area = cv2.contourArea(approx)
-        if area > 100 and len(approx) >= 4:
-            poly = [(pt[0][0], pt[0][1]) for pt in approx]
-            building_paths.append(poly)
-
-    st.success(f"Deteksi {len(building_paths)} bangunan.")
-
-    # --- Georeferencing ---
+    # --- Georeferencing sederhana (ubah sesuai lokasi kamu) ---
     geo_ref = [
         (0, 0, 130.0000, -5.0000),
         (image_np.shape[1], image_np.shape[0], 130.0100, -5.0100)
     ]
-
     (x1, y1, lon1, lat1), (x2, y2, lon2, lat2) = geo_ref
 
     def pixel_to_lonlat(x, y):
@@ -65,13 +50,20 @@ if uploaded_file:
     doc = ezdxf.new()
     msp = doc.modelspace()
 
-    for poly in building_paths:
-        poly_utm = [pixel_to_utm_shifted(x, y) for x, y in poly]
-        msp.add_lwpolyline(poly_utm, close=True, dxfattribs={"layer": "BUILDING"})
+    for box in boxes:
+        x_min, y_min, x_max, y_max = box
+        corners_px = [
+            (x_min, y_min),
+            (x_max, y_min),
+            (x_max, y_max),
+            (x_min, y_max)
+        ]
+        corners_utm = [pixel_to_utm_shifted(x, y) for x, y in corners_px]
+        msp.add_lwpolyline(corners_utm, close=True, dxfattribs={"layer": "BUILDING"})
 
-    dxf_text_buffer = io.StringIO()
-    doc.write(dxf_text_buffer)
-    dxf_text = dxf_text_buffer.getvalue()
-    dxf_data = dxf_text.encode('utf-8')
+    # Save as DXF
+    buffer = io.StringIO()
+    doc.write(buffer)
+    dxf_data = buffer.getvalue().encode("utf-8")
 
-    st.download_button("Download DXF Bangunan (UTM Zone 60S)", data=dxf_data, file_name="building_only_utm60.dxf", mime="application/dxf")
+    st.download_button("Download DXF Bangunan (YOLOv8)", data=dxf_data, file_name="buildings_yolo.dxf", mime="application/dxf")
