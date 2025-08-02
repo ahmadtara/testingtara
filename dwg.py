@@ -53,7 +53,10 @@ def parse_kml(kml_path):
 
             line_coord = pm.find('.//kml:LineString/kml:coordinates', ns)
             if line_coord is not None:
-                coords = [(float(lat), float(lon)) for lon, lat, *_ in [c.split(',') for c in line_coord.text.strip().split()]]
+                coords = []
+                for c in line_coord.text.strip().split():
+                    lon, lat, *_ = c.split(',')
+                    coords.append((float(lat), float(lon)))
                 items.append({
                     'type': 'path',
                     'name': name_text,
@@ -64,7 +67,10 @@ def parse_kml(kml_path):
 
             poly_coord = pm.find('.//kml:Polygon//kml:coordinates', ns)
             if poly_coord is not None:
-                coords = [(float(lat), float(lon)) for lon, lat, *_ in [c.split(',') for c in poly_coord.text.strip().split()]]
+                coords = []
+                for c in poly_coord.text.strip().split():
+                    lon, lat, *_ = c.split(',')
+                    coords.append((float(lat), float(lon)))
                 items.append({
                     'type': 'path',
                     'name': name_text,
@@ -85,7 +91,8 @@ def apply_offset(points_xy):
 def classify_items(items):
     classified = {name: [] for name in [
         "FDT", "FAT", "HP_COVER", "NEW_POLE", "EXISTING_POLE", "POLE",
-        "BOUNDARY", "DISTRIBUTION_CABLE", "SLING_WIRE"]}
+        "BOUNDARY", "DISTRIBUTION_CABLE", "SLING_WIRE"
+    ]}
     for it in items:
         folder = it['folder']
         if "FDT" in folder:
@@ -113,19 +120,28 @@ def draw_to_template(classified, template_path):
     msp = doc.modelspace()
 
     matchprop_hp = matchprop_pole = matchprop_sr = None
-    for e in msp.query('TEXT'):
-        txt = e.dxf.text.upper()
-        if 'NN-' in txt:
-            matchprop_hp = e.dxf
-        elif 'MR.SRMRW16' in txt:
-            matchprop_pole = e.dxf
-        elif 'SRMRW16.067.B01' in txt:
-            matchprop_sr = e.dxf
+    matchblock_fat = matchblock_fdt = matchblock_pole = None
 
-    block_names = {b.name.upper(): b for b in doc.blocks}
+    for e in msp:
+        if e.dxftype() == 'TEXT':
+            txt = e.dxf.text.upper()
+            if 'NN-' in txt:
+                matchprop_hp = e.dxf
+            elif 'MR.SRMRW16' in txt:
+                matchprop_pole = e.dxf
+            elif 'SRMRW16.067.B01' in txt:
+                matchprop_sr = e.dxf
+        elif e.dxftype() == 'INSERT':
+            name = e.dxf.name.upper()
+            if name == "FAT":
+                matchblock_fat = e.dxf
+            elif name == "FDT":
+                matchblock_fdt = e.dxf
+            elif name.startswith("A$"):
+                matchblock_pole = e.dxf
 
     all_xy = []
-    for cat_items in classified.values():
+    for layer_name, cat_items in classified.items():
         for obj in cat_items:
             if obj['type'] == 'point':
                 all_xy.append(latlon_to_xy(obj['latitude'], obj['longitude']))
@@ -139,7 +155,7 @@ def draw_to_template(classified, template_path):
     shifted_all, (cx, cy) = apply_offset(all_xy)
 
     idx = 0
-    for cat_items in classified.values():
+    for layer_name, cat_items in classified.items():
         for obj in cat_items:
             if obj['type'] == 'point':
                 obj['xy'] = shifted_all[idx]
@@ -150,53 +166,78 @@ def draw_to_template(classified, template_path):
 
     for layer_name, cat_items in classified.items():
         for obj in cat_items:
-            if obj['type'] == 'path':
+            if obj['type'] != 'point':
                 msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
                 continue
 
             x, y = obj['xy']
 
-            if layer_name == "FDT" and "FDT" in block_names:
-                msp.add_blockref("FDT", insert=(x, y), dxfattribs={"layer": layer_name, "xscale": 0.0025, "yscale": 0.0025})
-                msp.add_text(obj["name"], dxfattribs={
-                    "height": 1.5,
-                    "layer": layer_name,
-                    "insert": (x + 2, y + 2),
-                    "color": getattr(matchprop_sr, "color", 1)
-                })
-                continue
+            matchprop = None
+            block_name = None
+            matchblock = None
 
-            elif layer_name == "FAT" and "FAT" in block_names:
-                msp.add_blockref("FAT", insert=(x, y), dxfattribs={"layer": layer_name, "xscale": 0.0025, "yscale": 0.0025})
-                msp.add_text(obj["name"], dxfattribs={
-                    "height": 1.5,
-                    "layer": layer_name,
-                    "insert": (x + 2, y + 2),
-                    "color": getattr(matchprop_sr, "color", 1)
-                })
-                continue
+            if layer_name == "HP_COVER":
+                matchprop = matchprop_hp
+            elif layer_name == "FAT":
+                matchprop = matchprop_sr
+                block_name = "FAT"
+                matchblock = matchblock_fat
+            elif layer_name == "FDT":
+                matchprop = matchprop_sr
+                block_name = "FDT"
+                matchblock = matchblock_fdt
+            elif layer_name == "NEW_POLE":
+                matchprop = matchprop_pole
+                block_name = "A$C14dd5346"
+                matchblock = matchblock_pole
+            elif layer_name == "EXISTING_POLE":
+                matchprop = matchprop_pole
+                if obj['folder'] in ["EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3"]:
+                    block_name = "A$Cdb6fd7d1"
+                else:
+                    block_name = "A$C14dd5346"
+                matchblock = matchblock_pole
 
-            elif layer_name in ["NEW_POLE", "EXISTING_POLE"] and "A$C14DD5346" in block_names:
-                msp.add_blockref("A$C14DD5346", insert=(x, y), dxfattribs={"layer": layer_name})
-                msp.add_text(obj["name"], dxfattribs={
-                    "height": 1.5,
-                    "layer": layer_name,
-                    "insert": (x + 2, y + 2),
-                    "color": getattr(matchprop_pole, "color", 1)
-                })
-                continue
+            inserted_block = False
 
-            elif layer_name != "HP_COVER":
+            if block_name:
+                if block_name == "FDT":
+                    xscale = yscale = zscale = 0.0035
+                else:
+                    xscale = getattr(matchblock, "xscale", 1.0)
+                    yscale = getattr(matchblock, "yscale", 1.0)
+                    zscale = getattr(matchblock, "zscale", 1.0)
+
+                try:
+                    msp.add_blockref(
+                        name=block_name,
+                        insert=(x, y),
+                        dxfattribs={
+                            "layer": layer_name,
+                            "xscale": xscale,
+                            "yscale": yscale,
+                            "zscale": zscale
+                        }
+                    )
+                    inserted_block = True
+                except Exception as e:
+                    print(f"Gagal insert block {block_name}: {e}")
+
+            if not inserted_block:
                 msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": layer_name})
-                msp.add_text(obj["name"], dxfattribs={
-                    "height": 1.5,
+
+            if not (layer_name == "FDT"):
+                attribs = {
+                    "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
                     "layer": layer_name,
-                    "insert": (x + 2, y + 2),
-                    "color": 1
-                })
+                    "color": getattr(matchprop, "color", 256) if matchprop else 256,
+                    "insert": (x + 2, y)
+                }
+                msp.add_text(obj["name"], dxfattribs=attribs)
 
     return doc
 
+# Streamlit UI
 st.title("🏗️ KMZ → DXF (Masuk ke Template)")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
