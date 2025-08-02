@@ -120,14 +120,25 @@ def draw_to_template(classified, template_path):
     msp = doc.modelspace()
 
     matchprop_hp = matchprop_pole = matchprop_sr = None
-    for e in msp.query('TEXT'):
-        txt = e.dxf.text.upper()
-        if 'NN-' in txt:
-            matchprop_hp = e.dxf
-        elif 'MR.SRMRW16' in txt:
-            matchprop_pole = e.dxf
-        elif 'SRMRW16.067.B01' in txt:
-            matchprop_sr = e.dxf
+    matchblock_fat = matchblock_fdt = matchblock_pole = None
+
+    for e in msp:
+        if e.dxftype() == 'TEXT':
+            txt = e.dxf.text.upper()
+            if 'NN-' in txt:
+                matchprop_hp = e.dxf
+            elif 'MR.SRMRW16' in txt:
+                matchprop_pole = e.dxf
+            elif 'SRMRW16.067.B01' in txt:
+                matchprop_sr = e.dxf
+        elif e.dxftype() == 'INSERT':
+            name = e.dxf.name.upper()
+            if name == "FAT":
+                matchblock_fat = e.dxf
+            elif name == "FDT":
+                matchblock_fdt = e.dxf
+            elif name.startswith("A$"):
+                matchblock_pole = e.dxf
 
     all_xy = []
     for layer_name, cat_items in classified.items():
@@ -163,22 +174,27 @@ def draw_to_template(classified, template_path):
 
             matchprop = None
             block_name = None
+            matchblock = None
 
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
-            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
-                matchprop = matchprop_pole
-                block_name = "A$C14dd5346"
             elif layer_name == "FAT":
                 matchprop = matchprop_sr
                 block_name = "FAT"
+                matchblock = matchblock_fat
             elif layer_name == "FDT":
                 matchprop = matchprop_sr
                 block_name = "FDT"
+                matchblock = matchblock_fdt
+            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                matchprop = matchprop_pole
+                block_name = "A$C14dd5346"
+                matchblock = matchblock_pole
 
             if block_name:
-                # Semua block pakai skala 1.0 agar sama besar
-                scale_x = scale_y = scale_z = 1.0
+                xscale = getattr(matchblock, "xscale", 1.0)
+                yscale = getattr(matchblock, "yscale", 1.0)
+                zscale = getattr(matchblock, "zscale", 1.0)
 
                 try:
                     msp.add_blockref(
@@ -186,9 +202,9 @@ def draw_to_template(classified, template_path):
                         insert=(x, y),
                         dxfattribs={
                             "layer": layer_name,
-                            "xscale": scale_x,
-                            "yscale": scale_y,
-                            "zscale": scale_z
+                            "xscale": xscale,
+                            "yscale": yscale,
+                            "zscale": zscale
                         }
                     )
                 except Exception as e:
