@@ -187,7 +187,7 @@ def draw_to_template(classified, template_path):
                 text_layer = "FEATURE_LABEL"
                 text_color = 6
                 attribs = {
-                    "height": getattr(matchprop_hp, "height", 1.5),
+                    "height": 4.0,
                     "layer": text_layer,
                     "color": text_color,
                     "insert": (x - 2.2, y - 0.9),
