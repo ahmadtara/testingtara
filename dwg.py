@@ -81,10 +81,11 @@ if uploaded_file:
         poly_utm = [pixel_to_utm(x, y) for x, y in poly]
         msp.add_lwpolyline(poly_utm, close=True, dxfattribs={"layer": "BUILDING"})
 
-    # Simpan ke binary buffer
-    dxf_buffer = io.BytesIO()
-    doc.write(dxf_buffer)
-    dxf_data = dxf_buffer.getvalue()
+    # Simpan ke buffer teks dan encode ke bytes
+    dxf_text_buffer = io.StringIO()
+    doc.write(dxf_text_buffer)
+    dxf_text = dxf_text_buffer.getvalue()
+    dxf_data = dxf_text.encode('utf-8')
 
     # Tombol download
     st.download_button("Download DXF (UTM Zone 60S)", data=dxf_data, file_name="output_utm60.dxf", mime="application/dxf")
