@@ -16,7 +16,7 @@ target_folders = {
 }
 
 def extract_kmz(kmz_path, extract_dir):
-    with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
+    with zipfile.ZipFile(kmz_path, ' 'r') as kmz_file:
         kmz_file.extractall(extract_dir)
     return os.path.join(extract_dir, "doc.kml")
 
@@ -192,9 +192,12 @@ def draw_to_template(classified, template_path):
                 matchblock = matchblock_pole
 
             if block_name:
-                xscale = getattr(matchblock, "xscale", 1.0)
-                yscale = getattr(matchblock, "yscale", 1.0)
-                zscale = getattr(matchblock, "zscale", 1.0)
+                if block_name == "FDT":
+                    xscale = yscale = zscale = 0.25  # Manual override
+                else:
+                    xscale = getattr(matchblock, "xscale", 1.0)
+                    yscale = getattr(matchblock, "yscale", 1.0)
+                    zscale = getattr(matchblock, "zscale", 1.0)
 
                 try:
                     msp.add_blockref(
