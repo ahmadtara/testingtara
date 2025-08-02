@@ -161,41 +161,44 @@ def draw_to_template(classified, template_path):
 
             x, y = obj['xy']
 
+            matchprop = None
+            block_name = None
+
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
-            elif layer_name == "NEW_POLE":
+            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
                 matchprop = matchprop_pole
                 block_name = "A$C14dd5346"
-                try:
-                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
-                except Exception as e:
-                    print(f"Gagal tambah block NEW_POLE: {e}")
-            elif layer_name == "EXISTING_POLE":
-                matchprop = matchprop_pole
-                block_name = "A$C14dd5346"
-                try:
-                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
-                except Exception as e:
-                    print(f"Gagal tambah block EXISTING_POLE: {e}")
             elif layer_name == "FAT":
                 matchprop = matchprop_sr
                 block_name = "FAT"
-                try:
-                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
-                except Exception as e:
-                    print(f"Gagal tambah block FAT: {e}")
             elif layer_name == "FDT":
                 matchprop = matchprop_sr
                 block_name = "FDT"
+
+            if block_name:
+                # Skala khusus FAT & FDT = 1.5, lainnya 1.0
+                if block_name in ["FAT", "FDT"]:
+                    scale_x = scale_y = scale_z = 1.5
+                else:
+                    scale_x = scale_y = scale_z = 1.0
+
                 try:
-                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
+                    msp.add_blockref(
+                        name=block_name,
+                        insert=(x, y),
+                        dxfattribs={
+                            "layer": layer_name,
+                            "xscale": scale_x,
+                            "yscale": scale_y,
+                            "zscale": scale_z
+                        }
+                    )
                 except Exception as e:
-                    print(f"Gagal tambah block FDT: {e}")
+                    print(f"Gagal insert block {block_name}: {e}")
             else:
-                matchprop = None
                 msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            # Tambahkan teks label
             attribs = {
                 "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
                 "layer": layer_name,
