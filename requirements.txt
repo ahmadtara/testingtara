@@ -5,3 +5,5 @@ ezdxf
 pygeoif
 pyproj
 lxml
+opencv-python
+numpy
