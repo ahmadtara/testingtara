@@ -195,7 +195,7 @@ def draw_to_template(classified, template_path):
 
             if block_name:
                 if block_name == "FDT":
-                    xscale = yscale = zscale = 0.005
+                    xscale = yscale = zscale = 0.0035
                 else:
                     xscale = getattr(matchblock, "xscale", 1.0)
                     yscale = getattr(matchblock, "yscale", 1.0)
@@ -256,3 +256,4 @@ if uploaded_kmz and uploaded_template:
         st.success("✅ Konversi berhasil! DXF sudah dibuat berdasarkan template.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
+
