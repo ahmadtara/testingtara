@@ -150,42 +150,50 @@ def draw_to_template(classified, template_path):
 
     for layer_name, cat_items in classified.items():
         for obj in cat_items:
-            if obj['type'] != 'point':
+            if obj['type'] == 'path':
+                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
                 continue
 
             x, y = obj['xy']
-            block_inserted = False
-            name_upper = obj["name"].upper()
 
             if layer_name == "FDT" and "FDT" in block_names:
-                msp.add_blockref("FDT", insert=(x, y), dxfattribs={"layer": layer_name, "xscale": 0.005, "yscale": 0.005})
-                block_inserted = True
-            elif layer_name == "FAT" and "FAT" in block_names:
-                msp.add_blockref("FAT", insert=(x, y), dxfattribs={"layer": layer_name})
-                block_inserted = True
-            elif layer_name in ["NEW_POLE", "EXISTING_POLE"] and "A$C14DD5346" in block_names:
-                msp.add_blockref("A$C14DD5346", insert=(x, y), dxfattribs={"layer": layer_name})
-                block_inserted = True
-
-            if not block_inserted and layer_name != "HP_COVER":
-                msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": layer_name})
-
-            # Tambahkan teks agar tidak tumpang tindih
-            if not block_inserted or layer_name not in ["FDT"]:
-                height = getattr(matchprop_sr if layer_name in ["FAT", "FDT"] else matchprop_pole, "height", 1.5)
-                color = getattr(matchprop_sr if layer_name in ["FAT", "FDT"] else matchprop_pole, "color", 256)
+                msp.add_blockref("FDT", insert=(x, y), dxfattribs={"layer": layer_name, "xscale": 0.0025, "yscale": 0.0025})
                 msp.add_text(obj["name"], dxfattribs={
-                    "height": height,
+                    "height": 1.5,
                     "layer": layer_name,
-                    "color": color,
-                    "insert": (x, y + 3.5)
+                    "insert": (x + 2, y + 2),
+                    "color": getattr(matchprop_sr, "color", 1)
                 })
-
-            elif block_inserted and layer_name == "FDT":
                 continue
 
-            if obj['type'] == 'path':
-                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
+            elif layer_name == "FAT" and "FAT" in block_names:
+                msp.add_blockref("FAT", insert=(x, y), dxfattribs={"layer": layer_name, "xscale": 0.0025, "yscale": 0.0025})
+                msp.add_text(obj["name"], dxfattribs={
+                    "height": 1.5,
+                    "layer": layer_name,
+                    "insert": (x + 2, y + 2),
+                    "color": getattr(matchprop_sr, "color", 1)
+                })
+                continue
+
+            elif layer_name in ["NEW_POLE", "EXISTING_POLE"] and "A$C14DD5346" in block_names:
+                msp.add_blockref("A$C14DD5346", insert=(x, y), dxfattribs={"layer": layer_name})
+                msp.add_text(obj["name"], dxfattribs={
+                    "height": 1.5,
+                    "layer": layer_name,
+                    "insert": (x + 2, y + 2),
+                    "color": getattr(matchprop_pole, "color", 1)
+                })
+                continue
+
+            elif layer_name != "HP_COVER":
+                msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": layer_name})
+                msp.add_text(obj["name"], dxfattribs={
+                    "height": 1.5,
+                    "layer": layer_name,
+                    "insert": (x + 2, y + 2),
+                    "color": 1
+                })
 
     return doc
 
