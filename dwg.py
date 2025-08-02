@@ -1,87 +1,70 @@
 import streamlit as st
-import cv2
 import numpy as np
+import cv2
 import ezdxf
-from io import BytesIO
+import io
 
-# Transform pixel ke UTM
-def pixel_to_utm(x_px, y_px, ref_x_px, ref_y_px, ref_easting, ref_northing, scale):
-    easting = ref_easting + (x_px - ref_x_px) * scale
-    northing = ref_northing - (y_px - ref_y_px) * scale
-    return (easting, northing)
+st.title("Deteksi Garis Jalan & Bangunan → DXF (UTM Zone 60S)")
 
-def detect_lines(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5,5), 0)
-    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
-    lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=80, minLineLength=30, maxLineGap=5)
-    return lines
-
-def detect_buildings(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5,5), 0)
-    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    return contours
-
-def create_dxf(lines, polygons, ref, scale):
-    ref_x_px, ref_y_px, ref_e, ref_n = ref
-
-    doc = ezdxf.new(dxfversion='R2010')
-    msp = doc.modelspace()
-
-    # Tambah garis jalan
-    if lines is not None:
-        for l in lines:
-            x1, y1, x2, y2 = l[0]
-            p1 = pixel_to_utm(x1,y1,ref_x_px,ref_y_px,ref_e,ref_n,scale)
-            p2 = pixel_to_utm(x2,y2,ref_x_px,ref_y_px,ref_e,ref_n,scale)
-            msp.add_line(p1,p2,dxfattribs={"layer":"Jalan"})
-
-    # Tambah poligon bangunan
-    for c in polygons:
-        pts = [pixel_to_utm(pt[0][0], pt[0][1], ref_x_px, ref_y_px, ref_e, ref_n, scale) for pt in c]
-        if len(pts)>=3:
-            msp.add_lwpolyline(pts, close=True, dxfattribs={"layer":"Bangunan"})
-
-    return doc
-
-# Streamlit UI
-st.title("Konversi Gambar Peta ke DXF (Koordinat UTM Zone 60S)")
-
-uploaded_file = st.file_uploader("Upload gambar peta (PNG/JPG)...", type=["png","jpg","jpeg"])
-
-st.subheader("Titik Referensi Koordinat UTM")
-col1, col2 = st.columns(2)
-with col1:
-    ref_x_px = st.number_input("Pixel X", value=1000)
-    ref_e = st.number_input("Easting (meter)", value=500000.0)
-with col2:
-    ref_y_px = st.number_input("Pixel Y", value=500)
-    ref_n = st.number_input("Northing (meter)", value=10000000.0)
-
-scale = st.number_input("Skala (meter per pixel)", min_value=0.01, max_value=10.0, value=0.5)
+uploaded_file = st.file_uploader("Upload Gambar (Jalan & Bangunan)", type=["png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
+    # Baca gambar
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    image = cv2.imdecode(file_bytes, 1)
+    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-    st.image(image, caption="Gambar Input", use_column_width=True)
+    st.image(img, caption="Gambar Asli", use_column_width=True)
 
-    lines = detect_lines(image)
-    polygons = detect_buildings(image)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    st.success(f"Deteksi {0 if lines is None else len(lines)} garis jalan dan {len(polygons)} bangunan.")
+    # Threshold + invert
+    _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
 
-    doc = create_dxf(lines, polygons, (ref_x_px, ref_y_px, ref_e, ref_n), scale)
+    # Cari kontur untuk jalan (garis tipis)
+    jalan_binary = cv2.Canny(gray, 100, 200)
+    jalan_contours, _ = cv2.findContours(jalan_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    dxf_bytes = BytesIO()
-    doc.write(dxf_bytes)
-    dxf_bytes.seek(0)
+    # Cari kontur untuk bangunan (area besar)
+    bangunan_contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    st.success(f"Deteksi {len(jalan_contours)} garis jalan dan {len(bangunan_contours)} bangunan.")
+
+    # Buat dokumen DXF
+    doc = ezdxf.new(setup=True)
+    msp = doc.modelspace()
+
+    # UTM konversi kasar (misal 1 pixel = 0.5 meter) → atur sesuai kebutuhan
+    PIXEL_SCALE = 0.5  # meter per pixel
+    ORIGIN_X, ORIGIN_Y = 700000, 9250000  # koordinat UTM 60S acuan
+
+    def pixel_to_utm(pt):
+        x = ORIGIN_X + pt[0] * PIXEL_SCALE
+        y = ORIGIN_Y - pt[1] * PIXEL_SCALE  # Y dibalik karena citra top-down
+        return (x, y)
+
+    # Tambahkan garis jalan ke DXF
+    for cnt in jalan_contours:
+        if len(cnt) < 2:
+            continue
+        points = [pixel_to_utm(pt[0]) for pt in cnt]
+        msp.add_lwpolyline(points, dxfattribs={"layer": "JALAN"})
+
+    # Tambahkan bangunan sebagai poligon tertutup
+    for cnt in bangunan_contours:
+        if len(cnt) < 3:
+            continue
+        points = [pixel_to_utm(pt[0]) for pt in cnt]
+        msp.add_lwpolyline(points, close=True, dxfattribs={"layer": "BANGUNAN"})
+
+    # Simpan ke BytesIO
+    dxf_buffer = io.BytesIO()
+    doc.write(dxf_buffer)
+    dxf_buffer.seek(0)
+
+    # Tombol download
     st.download_button(
         label="Download DXF",
-        data=dxf_bytes,
-        file_name="output_utm60.dxf",
+        data=dxf_buffer.getvalue(),
+        file_name="output.dxf",
         mime="application/dxf"
     )
