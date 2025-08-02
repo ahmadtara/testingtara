@@ -5,3 +5,5 @@ numpy
 pillow
 ezdxf
 pyproj
+matplotlib
+shapely
