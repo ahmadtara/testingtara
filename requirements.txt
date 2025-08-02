@@ -1,7 +1,7 @@
 streamlit
-opencv-python-headless
+ultralytics
+opencv-python
 numpy
+pillow
 ezdxf
 pyproj
-Pillow
-pytesseract
