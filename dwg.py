@@ -187,10 +187,10 @@ def draw_to_template(classified, template_path):
                 text_layer = "FEATURE_LABEL"
                 text_color = 6
                 attribs = {
-                    "height": 1.8,
+                    "height": 2.5,
                     "layer": text_layer,
                     "color": text_color,
-                    "insert": (x - 2.5, y - 1.3),
+                    "insert": (x - 2.2, y - 0.9),
                     "rotation": 0
                 }
                 msp.add_text(obj["name"], dxfattribs=attribs)
@@ -269,7 +269,7 @@ def draw_to_template(classified, template_path):
 st.title("🏗️ KMZ → DXF (Masuk ke Template)")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
+uploaded_template = st.file_uploader("📀 Upload Template DXF", type=["dxf"])
 
 if uploaded_kmz and uploaded_template:
     extract_dir = "temp_kmz"
