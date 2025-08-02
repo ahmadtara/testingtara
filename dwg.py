@@ -39,7 +39,6 @@ def parse_kml(kml_path):
             name = pm.find('kml:name', ns)
             name_text = name.text.strip() if name is not None else ""
 
-            # Point
             point_coord = pm.find('.//kml:Point/kml:coordinates', ns)
             if point_coord is not None:
                 lon, lat, *_ = point_coord.text.strip().split(',')
@@ -52,7 +51,6 @@ def parse_kml(kml_path):
                 })
                 continue
 
-            # LineString
             line_coord = pm.find('.//kml:LineString/kml:coordinates', ns)
             if line_coord is not None:
                 coords = []
@@ -67,7 +65,6 @@ def parse_kml(kml_path):
                 })
                 continue
 
-            # Polygon
             poly_coord = pm.find('.//kml:Polygon//kml:coordinates', ns)
             if poly_coord is not None:
                 coords = []
@@ -166,33 +163,39 @@ def draw_to_template(classified, template_path):
 
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
-            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+            elif layer_name == "NEW_POLE":
                 matchprop = matchprop_pole
-            elif layer_name in ["FAT", "FDT"]:
-                matchprop = matchprop_sr
-            else:
-                matchprop = None
-
-            # Tambah block NP untuk tiang baru dan existing
-            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
                 block_name = "A$C14dd5346"
                 try:
-                    msp.add_blockref(
-                        name=block_name,
-                        insert=(x, y),
-                        dxfattribs={"layer": layer_name}
-                    )
+                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
                 except Exception as e:
-                    print(f"Gagal menambahkan block {block_name} di ({x}, {y}): {e}")
+                    print(f"Gagal tambah block NEW_POLE: {e}")
+            elif layer_name == "EXISTING_POLE":
+                matchprop = matchprop_pole
+                block_name = "A$C14dd5346"
+                try:
+                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
+                except Exception as e:
+                    print(f"Gagal tambah block EXISTING_POLE: {e}")
+            elif layer_name == "FAT":
+                matchprop = matchprop_sr
+                block_name = "FAT"
+                try:
+                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
+                except Exception as e:
+                    print(f"Gagal tambah block FAT: {e}")
+            elif layer_name == "FDT":
+                matchprop = matchprop_sr
+                block_name = "FDT"
+                try:
+                    msp.add_blockref(block_name, (x, y), dxfattribs={"layer": layer_name})
+                except Exception as e:
+                    print(f"Gagal tambah block FDT: {e}")
             else:
-                # Tambah lingkaran jika bukan new/existing pole
-                msp.add_circle(
-                    center=(x, y),
-                    radius=2,
-                    dxfattribs={"layer": layer_name}
-                )
+                matchprop = None
+                msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            # Tambah teks nama titik
+            # Tambahkan teks label
             attribs = {
                 "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
                 "layer": layer_name,
