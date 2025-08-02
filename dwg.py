@@ -177,11 +177,8 @@ def draw_to_template(classified, template_path):
                 block_name = "FDT"
 
             if block_name:
-                # Skala khusus FAT & FDT = 1.5, lainnya 1.0
-                if block_name in ["FAT", "FDT"]:
-                    scale_x = scale_y = scale_z = 1.5
-                else:
-                    scale_x = scale_y = scale_z = 1.0
+                # Semua block pakai skala 1.0 agar sama besar
+                scale_x = scale_y = scale_z = 1.0
 
                 try:
                     msp.add_blockref(
