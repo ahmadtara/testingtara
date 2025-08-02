@@ -1,7 +1,7 @@
-
 streamlit
-opencv-python-headless
 ezdxf
-torch
-torchvision
-detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu118/torch2.0/index.html
+pyproj
+requests
+lxml
+fastkml
+shapely
