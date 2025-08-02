@@ -16,7 +16,7 @@ target_folders = {
 }
 
 def extract_kmz(kmz_path, extract_dir):
-    with zipfile.ZipFile(kmz_path, ' 'r') as kmz_file:
+    with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
         kmz_file.extractall(extract_dir)
     return os.path.join(extract_dir, "doc.kml")
 
@@ -251,3 +251,4 @@ if uploaded_kmz and uploaded_template:
         st.success("✅ Konversi berhasil! DXF sudah dibuat berdasarkan template.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
+
