@@ -191,9 +191,11 @@ def draw_to_template(classified, template_path):
                 block_name = "A$C14dd5346"
                 matchblock = matchblock_pole
 
+            inserted_block = False
+
             if block_name:
                 if block_name == "FDT":
-                    xscale = yscale = zscale = 0.01  # Manual override
+                    xscale = yscale = zscale = 0.005
                 else:
                     xscale = getattr(matchblock, "xscale", 1.0)
                     yscale = getattr(matchblock, "yscale", 1.0)
@@ -210,18 +212,21 @@ def draw_to_template(classified, template_path):
                             "zscale": zscale
                         }
                     )
+                    inserted_block = True
                 except Exception as e:
                     print(f"Gagal insert block {block_name}: {e}")
-            else:
+
+            if not inserted_block:
                 msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            attribs = {
-                "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
-                "layer": layer_name,
-                "color": getattr(matchprop, "color", 256) if matchprop else 256,
-                "insert": (x + 2, y)
-            }
-            msp.add_text(obj["name"], dxfattribs=attribs)
+            if not (layer_name == "FDT"):
+                attribs = {
+                    "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
+                    "layer": layer_name,
+                    "color": getattr(matchprop, "color", 256) if matchprop else 256,
+                    "insert": (x + 2, y)
+                }
+                msp.add_text(obj["name"], dxfattribs=attribs)
 
     return doc
 
@@ -251,6 +256,3 @@ if uploaded_kmz and uploaded_template:
         st.success("✅ Konversi berhasil! DXF sudah dibuat berdasarkan template.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
-
-
-
