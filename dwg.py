@@ -181,15 +181,16 @@ def draw_to_template(classified, template_path):
                 msp.add_lwpolyline(obj['xy_path'], dxfattribs=attribs)
                 continue
 
+            if layer_name == "HP_COVER":
+                continue  # Lewati gambar circle dan teks untuk HP COVER
+
             x, y = obj['xy']
 
             matchprop = None
             block_name = None
             matchblock = None
 
-            if layer_name == "HP_COVER":
-                matchprop = matchprop_hp
-            elif layer_name == "FAT":
+            if layer_name == "FAT":
                 matchprop = matchprop_sr
                 block_name = "FAT"
                 matchblock = matchblock_fat
@@ -240,7 +241,6 @@ def draw_to_template(classified, template_path):
             if not (layer_name == "FDT"):
                 text_layer = true_layer
                 text_color = 256
-
                 if obj['folder'] in ["NEW POLE 7-3", "NEW POLE 7-4", "EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3"]:
                     text_layer = "FEATURE_LABEL"
                     text_color = 1
@@ -258,10 +258,11 @@ def draw_to_template(classified, template_path):
 
     return doc
 
+# Streamlit UI
 st.title("🏗️ KMZ → DXF (Masuk ke Template)")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-uploaded_template = st.file_uploader("📀 Upload Template DXF", type=["dxf"])
+uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
 
 if uploaded_kmz and uploaded_template:
     extract_dir = "temp_kmz"
