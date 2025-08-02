@@ -1,9 +1,6 @@
 streamlit
 ezdxf
 pyproj
-requests
 lxml
 fastkml
 shapely
-geopandas
-osmnx
