@@ -177,8 +177,7 @@ def draw_to_template(classified, template_path):
         true_layer = layer_mapping.get(layer_name, layer_name)
         for obj in cat_items:
             if obj['type'] != 'point':
-                attribs = {"layer": true_layer}
-                msp.add_lwpolyline(obj['xy_path'], dxfattribs=attribs)
+                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": true_layer})
                 continue
 
             x, y = obj['xy']
@@ -186,14 +185,24 @@ def draw_to_template(classified, template_path):
             if layer_name == "HP_COVER":
                 text_layer = "FEATURE_LABEL"
                 text_color = 6
-                attribs = {
+                insert_pos = (x - 2.2, y - 0.9)
+
+                if classified["KOTAK"]:
+                    closest_box = min(classified["KOTAK"], key=lambda k: min(
+                        (x - pt[0])**2 + (y - pt[1])**2 for pt in k["xy_path"]
+                    ))
+                    pts = closest_box["xy_path"]
+                    cx = sum(p[0] for p in pts) / len(pts)
+                    cy = sum(p[1] for p in pts) / len(pts)
+                    insert_pos = (cx, cy)
+
+                msp.add_text(obj["name"], dxfattribs={
                     "height": 6.0,
                     "layer": text_layer,
                     "color": text_color,
-                    "insert": (x - 2.2, y - 0.9),
+                    "insert": insert_pos,
                     "rotation": 0
-                }
-                msp.add_text(obj["name"], dxfattribs=attribs)
+                })
                 continue
 
             matchprop = None
@@ -221,29 +230,21 @@ def draw_to_template(classified, template_path):
                 matchblock = matchblock_pole
 
             inserted_block = False
-
             if block_name:
-                if block_name == "FDT":
-                    xscale = yscale = zscale = 0.0035
-                else:
-                    xscale = getattr(matchblock, "xscale", 1.0)
-                    yscale = getattr(matchblock, "yscale", 1.0)
-                    zscale = getattr(matchblock, "zscale", 1.0)
-
                 try:
                     msp.add_blockref(
                         name=block_name,
                         insert=(x, y),
                         dxfattribs={
                             "layer": true_layer,
-                            "xscale": xscale,
-                            "yscale": yscale,
-                            "zscale": zscale
+                            "xscale": getattr(matchblock, "xscale", 1.0),
+                            "yscale": getattr(matchblock, "yscale", 1.0),
+                            "zscale": getattr(matchblock, "zscale", 1.0)
                         }
                     )
                     inserted_block = True
-                except Exception as e:
-                    print(f"Gagal insert block {block_name}: {e}")
+                except:
+                    pass
 
             if not inserted_block:
                 msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": true_layer})
@@ -251,21 +252,19 @@ def draw_to_template(classified, template_path):
             if not (layer_name == "FDT"):
                 text_layer = true_layer
                 text_color = 256
-
                 if obj['folder'] in ["NEW POLE 7-3", "NEW POLE 7-4", "EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3"]:
                     text_layer = "FEATURE_LABEL"
                     text_color = 1
-
-                attribs = {
+                msp.add_text(obj["name"], dxfattribs={
                     "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
                     "layer": text_layer,
                     "color": text_color,
                     "insert": (x + 2, y)
-                }
-                msp.add_text(obj["name"], dxfattribs=attribs)
+                })
 
     return doc
 
+# 🖼️ Streamlit UI
 st.title("🏗️ KMZ → DXF (Masuk ke Template)")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
@@ -291,4 +290,3 @@ if uploaded_kmz and uploaded_template:
         st.success("✅ Konversi berhasil! DXF sudah dibuat berdasarkan template.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
-
