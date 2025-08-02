@@ -121,7 +121,6 @@ def draw_to_template(classified, template_path):
 
     matchprop_hp = matchprop_pole = matchprop_sr = None
     matchblock_fat = matchblock_fdt = matchblock_pole = None
-    matchlayer_boundary = matchlayer_distr = matchlayer_sling = None
 
     for e in msp:
         if e.dxftype() == 'TEXT':
@@ -140,14 +139,6 @@ def draw_to_template(classified, template_path):
                 matchblock_fdt = e.dxf
             elif name.startswith("A$"):
                 matchblock_pole = e.dxf
-        elif e.dxftype() in ['LINE', 'LWPOLYLINE']:
-            lname = e.dxf.layer.upper()
-            if lname == "FAT AREA":
-                matchlayer_boundary = e.dxf
-            elif lname == "FO 36 CORE":
-                matchlayer_distr = e.dxf
-            elif lname == "STRAND UG":
-                matchlayer_sling = e.dxf
 
     all_xy = []
     for layer_name, cat_items in classified.items():
@@ -173,10 +164,17 @@ def draw_to_template(classified, template_path):
                 obj['xy_path'] = shifted_all[idx: idx + len(obj['coords'])]
                 idx += len(obj['coords'])
 
+    layer_mapping = {
+        "BOUNDARY": "FAT AREA",
+        "DISTRIBUTION_CABLE": "FO 36 CORE",
+        "SLING_WIRE": "STRAND UG"
+    }
+
     for layer_name, cat_items in classified.items():
+        true_layer = layer_mapping.get(layer_name, layer_name)
         for obj in cat_items:
             if obj['type'] != 'point':
-                attribs = {"layer": layer_name}
+                attribs = {"layer": true_layer}
                 msp.add_lwpolyline(obj['xy_path'], dxfattribs=attribs)
                 continue
 
@@ -223,7 +221,7 @@ def draw_to_template(classified, template_path):
                         name=block_name,
                         insert=(x, y),
                         dxfattribs={
-                            "layer": layer_name,
+                            "layer": true_layer,
                             "xscale": xscale,
                             "yscale": yscale,
                             "zscale": zscale
@@ -234,12 +232,12 @@ def draw_to_template(classified, template_path):
                     print(f"Gagal insert block {block_name}: {e}")
 
             if not inserted_block:
-                msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": layer_name})
+                msp.add_circle(center=(x, y), radius=2, dxfattribs={"layer": true_layer})
 
             if not (layer_name == "FDT"):
                 attribs = {
                     "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
-                    "layer": layer_name,
+                    "layer": true_layer,
                     "color": 256,
                     "insert": (x + 2, y)
                 }
