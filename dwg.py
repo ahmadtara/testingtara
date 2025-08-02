@@ -1,79 +1,87 @@
-import sys
-import os
-from fastkml import kml
-from pyproj import Transformer
+import streamlit as st
+import cv2
+import numpy as np
 import ezdxf
+from io import BytesIO
 
-# Folder yang ingin diambil
-target_folders = {
-    'FDT',
-    'NEW POLE 7-3',
-    'NEW POLE 7-4',
-    'EXISTING POLE EMR 7-4',
-    'FAT',
-    'HP COVER'
-}
+# Transform pixel ke UTM
+def pixel_to_utm(x_px, y_px, ref_x_px, ref_y_px, ref_easting, ref_northing, scale):
+    easting = ref_easting + (x_px - ref_x_px) * scale
+    northing = ref_northing - (y_px - ref_y_px) * scale
+    return (easting, northing)
 
-# Transformer: WGS84 ke UTM zona 60S
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
+def detect_lines(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5,5), 0)
+    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=80, minLineLength=30, maxLineGap=5)
+    return lines
 
-def parse_kml(kml_path):
-    with open(kml_path, 'rt', encoding='utf-8') as f:
-        doc = f.read()
+def detect_buildings(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5,5), 0)
+    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    return contours
 
-    k = kml.KML()
-    k.from_string(doc)
+def create_dxf(lines, polygons, ref, scale):
+    ref_x_px, ref_y_px, ref_e, ref_n = ref
 
-    points = []
-
-    def extract(features):
-        for f in features:
-            if hasattr(f, 'features'):
-                fname = f.name.strip() if f.name else ""
-                if fname in target_folders:
-                    for placemark in f.features():
-                        if hasattr(placemark, 'geometry') and placemark.geometry.geom_type == 'Point':
-                            lon, lat = placemark.geometry.x, placemark.geometry.y
-                            easting, northing = transformer.transform(lon, lat)
-                            points.append({
-                                'folder': fname,
-                                'placemark': placemark.name,
-                                'easting': round(easting, 3),
-                                'northing': round(northing, 3)
-                            })
-                extract(f.features())
-    extract(k.features())
-    return points
-
-def generate_dxf(data, output_path):
     doc = ezdxf.new(dxfversion='R2010')
     msp = doc.modelspace()
 
-    for item in data:
-        x, y = item['easting'], item['northing']
-        label = f"{item['placemark']}\n({item['folder']})"
-        msp.add_point((x, y))
-        msp.add_text(label, dxfattribs={'height': 2.5}).set_pos((x, y + 3), align='CENTER')
+    # Tambah garis jalan
+    if lines is not None:
+        for l in lines:
+            x1, y1, x2, y2 = l[0]
+            p1 = pixel_to_utm(x1,y1,ref_x_px,ref_y_px,ref_e,ref_n,scale)
+            p2 = pixel_to_utm(x2,y2,ref_x_px,ref_y_px,ref_e,ref_n,scale)
+            msp.add_line(p1,p2,dxfattribs={"layer":"Jalan"})
 
-    doc.saveas(output_path)
-    print(f"✅ DXF berhasil disimpan di: {output_path}")
+    # Tambah poligon bangunan
+    for c in polygons:
+        pts = [pixel_to_utm(pt[0][0], pt[0][1], ref_x_px, ref_y_px, ref_e, ref_n, scale) for pt in c]
+        if len(pts)>=3:
+            msp.add_lwpolyline(pts, close=True, dxfattribs={"layer":"Bangunan"})
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("❌ Gunakan format: python convert_kml_to_dxf.py file.kml")
-        sys.exit(1)
+    return doc
 
-    input_kml = sys.argv[1]
-    if not os.path.exists(input_kml):
-        print(f"❌ File tidak ditemukan: {input_kml}")
-        sys.exit(1)
+# Streamlit UI
+st.title("Konversi Gambar Peta ke DXF (Koordinat UTM Zone 60S)")
 
-    data = parse_kml(input_kml)
+uploaded_file = st.file_uploader("Upload gambar peta (PNG/JPG)...", type=["png","jpg","jpeg"])
 
-    if not data:
-        print("⚠️ Tidak ditemukan placemark dalam folder target.")
-        sys.exit(0)
+st.subheader("Titik Referensi Koordinat UTM")
+col1, col2 = st.columns(2)
+with col1:
+    ref_x_px = st.number_input("Pixel X", value=1000)
+    ref_e = st.number_input("Easting (meter)", value=500000.0)
+with col2:
+    ref_y_px = st.number_input("Pixel Y", value=500)
+    ref_n = st.number_input("Northing (meter)", value=10000000.0)
 
-    # Output file
-    output_dxf = os.path.splitext(input_kml)[0] + "_output.dxf"
-    generate_dxf(data, output_dxf)
+scale = st.number_input("Skala (meter per pixel)", min_value=0.01, max_value=10.0, value=0.5)
+
+if uploaded_file is not None:
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    image = cv2.imdecode(file_bytes, 1)
+
+    st.image(image, caption="Gambar Input", use_column_width=True)
+
+    lines = detect_lines(image)
+    polygons = detect_buildings(image)
+
+    st.success(f"Deteksi {0 if lines is None else len(lines)} garis jalan dan {len(polygons)} bangunan.")
+
+    doc = create_dxf(lines, polygons, (ref_x_px, ref_y_px, ref_e, ref_n), scale)
+
+    dxf_bytes = BytesIO()
+    doc.write(dxf_bytes)
+    dxf_bytes.seek(0)
+
+    st.download_button(
+        label="Download DXF",
+        data=dxf_bytes,
+        file_name="output_utm60.dxf",
+        mime="application/dxf"
+    )
