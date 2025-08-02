@@ -1,9 +1,4 @@
 streamlit
-fastkml
-shapely
-ezdxf
-pygeoif
-pyproj
-lxml
 opencv-python
 numpy
+ezdxf
