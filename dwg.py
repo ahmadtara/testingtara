@@ -187,7 +187,7 @@ def draw_to_template(classified, template_path):
                 text_layer = "FEATURE_LABEL"
                 text_color = 6
                 attribs = {
-                    "height": 4.0,
+                    "height": 6.0,
                     "layer": text_layer,
                     "color": text_color,
                     "insert": (x - 2.2, y - 0.9),
@@ -291,3 +291,4 @@ if uploaded_kmz and uploaded_template:
         st.success("✅ Konversi berhasil! DXF sudah dibuat berdasarkan template.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
+
