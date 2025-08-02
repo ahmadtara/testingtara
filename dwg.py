@@ -187,10 +187,10 @@ def draw_to_template(classified, template_path):
                 text_layer = "FEATURE_LABEL"
                 text_color = 6
                 attribs = {
-                    "height": 2.5,
+                    "height": 1.8,
                     "layer": text_layer,
                     "color": text_color,
-                    "insert": (x - 4, y - 1.8),
+                    "insert": (x - 2.5, y - 1.3),
                     "rotation": 0
                 }
                 msp.add_text(obj["name"], dxfattribs=attribs)
