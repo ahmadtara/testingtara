@@ -121,6 +121,7 @@ def draw_to_template(classified, template_path):
 
     matchprop_hp = matchprop_pole = matchprop_sr = None
     matchblock_fat = matchblock_fdt = matchblock_pole = None
+    matchlayer_boundary = matchlayer_distr = matchlayer_sling = None
 
     for e in msp:
         if e.dxftype() == 'TEXT':
@@ -139,6 +140,14 @@ def draw_to_template(classified, template_path):
                 matchblock_fdt = e.dxf
             elif name.startswith("A$"):
                 matchblock_pole = e.dxf
+        elif e.dxftype() in ['LINE', 'LWPOLYLINE']:
+            lname = e.dxf.layer.upper()
+            if lname == "FAT AREA":
+                matchlayer_boundary = e.dxf
+            elif lname == "FO 36 CORE":
+                matchlayer_distr = e.dxf
+            elif lname == "STRAND UG":
+                matchlayer_sling = e.dxf
 
     all_xy = []
     for layer_name, cat_items in classified.items():
@@ -167,7 +176,8 @@ def draw_to_template(classified, template_path):
     for layer_name, cat_items in classified.items():
         for obj in cat_items:
             if obj['type'] != 'point':
-                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
+                attribs = {"layer": layer_name}
+                msp.add_lwpolyline(obj['xy_path'], dxfattribs=attribs)
                 continue
 
             x, y = obj['xy']
@@ -230,7 +240,7 @@ def draw_to_template(classified, template_path):
                 attribs = {
                     "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
                     "layer": layer_name,
-                    "color": getattr(matchprop, "color", 256) if matchprop else 256,
+                    "color": 256,
                     "insert": (x + 2, y)
                 }
                 msp.add_text(obj["name"], dxfattribs=attribs)
