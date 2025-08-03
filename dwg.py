@@ -2,17 +2,27 @@ import os
 import zipfile
 import tempfile
 import xml.etree.ElementTree as ET
+from pathlib import Path
+
+import geopandas as gpd
 import streamlit as st
 import ezdxf
-import geopandas as gpd
+import osmnx as ox
 from fastkml import kml
 from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineString, MultiLineString
-from shapely.ops import unary_union, linemerge, snap, polygonize
-import osmnx as ox
+from shapely.ops import unary_union, linemerge, snap, polygonize, transform
 from pyproj import Transformer
 
-transformer = Transformer.from_crs("EPSG:32760", "EPSG:4326", always_xy=True)
+st.set_page_config(layout="wide")
+
+# Constants
+TARGET_EPSG = "EPSG:32760"
 DEFAULT_WIDTH = 10
+
+# Transformer for DXF output
+utm_transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
+# Transformer for OSM download (reverse)
+osm_transformer = Transformer.from_crs("EPSG:32760", "EPSG:4326", always_xy=True)
 
 def extract_kmz(kmz_path, extract_dir):
     with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
@@ -31,17 +41,41 @@ def parse_kml(kml_path):
         if folder_name_tag is None:
             continue
         folder_name = folder_name_tag.text.strip().upper()
-        if folder_name != 'BOUNDARY CLUSTER':
-            continue
         placemarks = folder.findall('.//kml:Placemark', ns)
         for pm in placemarks:
             name = pm.find('kml:name', ns)
             name_text = name.text.strip() if name is not None else ""
 
-            polygon_coord = pm.find('.//kml:Polygon//kml:coordinates', ns)
-            if polygon_coord is not None:
+            point_coord = pm.find('.//kml:Point/kml:coordinates', ns)
+            if point_coord is not None:
+                lon, lat, *_ = point_coord.text.strip().split(',')
+                items.append({
+                    'type': 'point',
+                    'name': name_text,
+                    'latitude': float(lat),
+                    'longitude': float(lon),
+                    'folder': folder_name
+                })
+                continue
+
+            line_coord = pm.find('.//kml:LineString/kml:coordinates', ns)
+            if line_coord is not None:
                 coords = []
-                for c in polygon_coord.text.strip().split():
+                for c in line_coord.text.strip().split():
+                    lon, lat, *_ = c.split(',')
+                    coords.append((float(lat), float(lon)))
+                items.append({
+                    'type': 'path',
+                    'name': name_text,
+                    'coords': coords,
+                    'folder': folder_name
+                })
+                continue
+
+            poly_coord = pm.find('.//kml:Polygon//kml:coordinates', ns)
+            if poly_coord is not None:
+                coords = []
+                for c in poly_coord.text.strip().split():
                     lon, lat, *_ = c.split(',')
                     coords.append((float(lat), float(lon)))
                 items.append({
@@ -52,72 +86,81 @@ def parse_kml(kml_path):
                 })
     return items
 
-def get_osm_streets_from_polygon(polygon, tags=None):
-    if tags is None:
-        tags = {"highway": True}
+def classify_layer(name):
+    if "HP COVER" in name:
+        return "NN"
+    elif "POLE" in name or "EXISTING" in name:
+        return "MR"
+    return None
+
+def get_osm_streets_from_polygon(polygon_epsg_32760):
+    # Convert polygon to EPSG:4326 for OSM download
+    polygon_wgs84 = transform(lambda x, y: osm_transformer.transform(x, y), polygon_epsg_32760)
     try:
-        gdf = ox.geometries_from_polygon(polygon, tags)
-        if 'geometry' in gdf:
-            return gdf[gdf.geometry.type.isin(['LineString', 'MultiLineString'])]
+        gdf = ox.geometries_from_polygon(polygon_wgs84, tags={"highway": True})
+        streets = gdf[gdf.geometry.type.isin(["LineString", "MultiLineString"])]
+        return streets
     except Exception as e:
-        print("OSM Error:", e)
-    return gpd.GeoDataFrame(columns=['geometry'])
+        st.warning(f"⚠️ Tidak ada jalan ditemukan di area tersebut.\n{e}")
+        return gpd.GeoDataFrame()
 
-def to_utm(lat, lon):
-    transformer = Transformer.from_crs("EPSG:4326", TARGET_EPSG, always_xy=True)
-    x, y = transformer.transform(lon, lat)
-    return x, y
+def latlon_to_xy(lat, lon):
+    return utm_transformer.transform(lon, lat)
 
-def draw_streets_to_dxf(streets_gdf, dxf_path, layer_name="OSM_STREETS"):
-    doc = ezdxf.new()
-    msp = doc.modelspace()
-    doc.layers.add(name=layer_name)
-
-    for geom in streets_gdf.geometry:
-        if isinstance(geom, LineString):
-            points = [to_utm(lat, lon) for lon, lat in geom.coords]
-            msp.add_lwpolyline(points, dxfattribs={"layer": layer_name})
-        elif isinstance(geom, MultiLineString):
-            for line in geom.geoms:
-                points = [to_utm(lat, lon) for lon, lat in line.coords]
-                msp.add_lwpolyline(points, dxfattribs={"layer": layer_name})
-
-    doc.saveas(dxf_path)
+def load_template_blocks(template_path):
+    doc = ezdxf.readfile(template_path)
+    return doc.modelspace(), doc
 
 def main():
-    st.title("KMZ to DXF (OSM Jalan dari Folder 'BOUNDARY CLUSTER')")
+    st.title("Konversi KMZ ke DXF dengan Layering & OSM Road")
+    uploaded = st.file_uploader("Unggah file KMZ", type=["kmz"])
+    template = st.file_uploader("Template DXF (dengan block)", type=["dxf"])
 
-    uploaded_file = st.file_uploader("Upload file KMZ", type="kmz")
-    if uploaded_file is not None:
+    if uploaded and template:
         with tempfile.TemporaryDirectory() as tmpdir:
-            kmz_path = os.path.join(tmpdir, uploaded_file.name)
-            with open(kmz_path, 'wb') as f:
-                f.write(uploaded_file.read())
+            kmz_path = os.path.join(tmpdir, uploaded.name)
+            with open(kmz_path, "wb") as f:
+                f.write(uploaded.getvalue())
 
             kml_path = extract_kmz(kmz_path, tmpdir)
             items = parse_kml(kml_path)
-
-            polygons = [Polygon(item['coords']) for item in items if item['type'] == 'polygon']
+            polygons = [Polygon(i['coords']) for i in items if i['type'] == 'polygon' and i['folder'].startswith("BOUNDARY")]
 
             if not polygons:
                 st.error("❌ Terjadi kesalahan: Tidak ada polygon dari folder 'BOUNDARY CLUSTER' ditemukan.")
                 return
 
-            combined_polygon = unary_union(polygons)
-            if isinstance(combined_polygon, (Polygon, MultiPolygon)):
-                osm_streets = get_osm_streets_from_polygon(combined_polygon)
+            boundary = unary_union(polygons)
+            roads = get_osm_streets_from_polygon(boundary)
 
-                if not osm_streets.empty:
-                    dxf_output = os.path.join(tmpdir, "output_streets.dxf")
-                    draw_streets_to_dxf(osm_streets, dxf_output)
-                    st.success("✅ File DXF berhasil dibuat.")
-                    with open(dxf_output, "rb") as f:
-                        st.download_button("⬇️ Download DXF", f, file_name="OSM_Streets.dxf")
-                else:
-                    st.warning("⚠️ Tidak ada jalan ditemukan di area tersebut.")
-            else:
-                st.error("❌ Polygon gabungan tidak valid.")
+            msp, doc = load_template_blocks(template)
+            
+            for idx, item in enumerate(items):
+                layer = classify_layer(item['folder'])
+                if item['type'] == 'point':
+                    x, y = latlon_to_xy(item['latitude'], item['longitude'])
+                    msp.add_text(item['name'], dxfattribs={"layer": layer}).set_pos((x, y))
+                elif item['type'] in ('path', 'polygon'):
+                    coords = [latlon_to_xy(lat, lon) for lat, lon in item['coords']]
+                    if item['type'] == 'path':
+                        msp.add_lwpolyline(coords, dxfattribs={"layer": layer})
+                    elif item['type'] == 'polygon':
+                        msp.add_lwpolyline(coords, close=True, dxfattribs={"layer": layer})
+
+            for _, row in roads.iterrows():
+                geom = row.geometry
+                if isinstance(geom, LineString):
+                    coords = [utm_transformer.transform(*pt) for pt in geom.coords]
+                    msp.add_lwpolyline(coords, dxfattribs={"layer": "ROAD"})
+                elif isinstance(geom, MultiLineString):
+                    for line in geom:
+                        coords = [utm_transformer.transform(*pt) for pt in line.coords]
+                        msp.add_lwpolyline(coords, dxfattribs={"layer": "ROAD"})
+
+            output_path = os.path.join(tmpdir, "output.dxf")
+            doc.saveas(output_path)
+            with open(output_path, "rb") as f:
+                st.download_button("Download DXF", f.read(), file_name="output.dxf")
 
 if __name__ == "__main__":
     main()
-
