@@ -11,7 +11,7 @@ from shapely.ops import unary_union, linemerge, snap, polygonize
 import osmnx as ox
 from pyproj import Transformer
 
-TARGET_EPSG = "EPSG:32760"
+transformer = Transformer.from_crs("EPSG:32760", "EPSG:4326", always_xy=True)
 DEFAULT_WIDTH = 10
 
 def extract_kmz(kmz_path, extract_dir):
@@ -120,3 +120,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
