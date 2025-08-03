@@ -91,10 +91,13 @@ def classify_layer(name):
         return "NN"
     elif "POLE" in name or "EXISTING" in name:
         return "MR"
+    elif "FDT" in name:
+        return "FDT"
+    elif "FAT" in name:
+        return "FAT"
     return None
 
 def get_osm_streets_from_polygon(polygon_epsg_32760):
-    # Convert polygon to EPSG:4326 for OSM download
     polygon_wgs84 = transform(lambda x, y: osm_transformer.transform(x, y), polygon_epsg_32760)
     try:
         gdf = ox.geometries_from_polygon(polygon_wgs84, tags={"highway": True})
@@ -107,16 +110,11 @@ def get_osm_streets_from_polygon(polygon_epsg_32760):
 def latlon_to_xy(lat, lon):
     return utm_transformer.transform(lon, lat)
 
-def load_template_blocks(template_path):
-    doc = ezdxf.readfile(template_path)
-    return doc.modelspace(), doc
-
 def main():
     st.title("Konversi KMZ ke DXF dengan Layering & OSM Road")
     uploaded = st.file_uploader("Unggah file KMZ", type=["kmz"])
-    template = st.file_uploader("Template DXF (dengan block)", type=["dxf"])
 
-    if uploaded and template:
+    if uploaded:
         with tempfile.TemporaryDirectory() as tmpdir:
             kmz_path = os.path.join(tmpdir, uploaded.name)
             with open(kmz_path, "wb") as f:
@@ -133,13 +131,14 @@ def main():
             boundary = unary_union(polygons)
             roads = get_osm_streets_from_polygon(boundary)
 
-            msp, doc = load_template_blocks(template)
-            
+            doc = ezdxf.new(setup=True)
+            msp = doc.modelspace()
+
             for idx, item in enumerate(items):
                 layer = classify_layer(item['folder'])
                 if item['type'] == 'point':
                     x, y = latlon_to_xy(item['latitude'], item['longitude'])
-                    msp.add_text(item['name'], dxfattribs={"layer": layer}).set_pos((x, y))
+                    msp.add_text(item['name'], dxfattribs={"layer": layer, "height": 5}).set_pos((x, y))
                 elif item['type'] in ('path', 'polygon'):
                     coords = [latlon_to_xy(lat, lon) for lat, lon in item['coords']]
                     if item['type'] == 'path':
