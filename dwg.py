@@ -81,4 +81,80 @@ def export_to_dxf(gdf, dxf_path, polygon=None, polygon_crs=None):
             continue
 
         merged = geom if isinstance(geom, LineString) else linemerge(geom)
-        if
+        if isinstance(merged, (LineString, MultiLineString)):
+            buffered = merged.buffer(width / 2, resolution=8, join_style=2)
+            all_buffers.append(buffered)
+            buffer_layers.append(layer)
+
+    if not all_buffers:
+        raise Exception("❌ Tidak ada garis valid untuk diekspor.")
+
+    outlines = list(polygonize(unary_union(all_buffers).boundary))
+    if not outlines:
+        raise Exception("❌ Polygonize gagal menghasilkan outline.")
+
+    bounds = [(pt[0], pt[1]) for geom in outlines for pt in geom.exterior.coords]
+    min_x, min_y = min(x for x, _ in bounds), min(y for _, y in bounds)
+
+    for outline in outlines:
+        coords = [(pt[0] - min_x, pt[1] - min_y) for pt in outline.exterior.coords]
+        msp.add_lwpolyline(coords, dxfattribs={"layer": "ROADS"})
+
+    if polygon is not None and polygon_crs is not None:
+        poly = gpd.GeoSeries([polygon], crs=polygon_crs).to_crs(TARGET_EPSG).iloc[0]
+        geoms = [poly] if poly.geom_type == 'Polygon' else poly.geoms
+        for p in geoms:
+            coords = [(pt[0] - min_x, pt[1] - min_y) for pt in p.exterior.coords]
+            msp.add_lwpolyline(coords, dxfattribs={"layer": "BOUNDARY"})
+
+    doc.set_modelspace_vport(height=10000)
+    doc.saveas(dxf_path)
+
+def process_kml_to_dxf(kml_path, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    polygon, polygon_crs = extract_polygon_from_kml(kml_path)
+    roads = get_osm_roads(polygon)
+
+    geojson_path = os.path.join(output_dir, "roadmap_osm.geojson")
+    dxf_path = os.path.join(output_dir, "roadmap_osm.dxf")
+
+    if not roads.empty:
+        roads_utm = roads.to_crs(TARGET_EPSG)
+        roads_utm.to_file(geojson_path, driver="GeoJSON")
+        export_to_dxf(roads_utm, dxf_path, polygon=polygon, polygon_crs=polygon_crs)
+        return dxf_path, geojson_path, True
+    else:
+        raise Exception("Tidak ada jalan ditemukan di dalam area polygon.")
+
+# ======================== Streamlit App ========================
+
+def main():
+    tab1, tab2 = st.tabs(["📁 KMZ ➝ Autocad", "🌍 KML ➝ Road DXF"])
+
+    with tab1:
+        run_kmz_to_dwg()  # FUNGSI INI DARI KODE PERTAMA KAMU
+
+    with tab2:
+        st.caption("Upload file .KML (area batas cluster)")
+        kml_file = st.file_uploader("Upload file .KML", type=["kml"], key="kmlfile")
+
+        if kml_file:
+            with st.spinner("💫 Memproses file..."):
+                try:
+                    temp_input = f"/tmp/{kml_file.name}"
+                    with open(temp_input, "wb") as f:
+                        f.write(kml_file.read())
+
+                    output_dir = "/tmp/output"
+                    dxf_path, geojson_path, ok = process_kml_to_dxf(temp_input, output_dir)
+
+                    if ok:
+                        st.success("✅ Berhasil diekspor ke DXF!")
+                        with open(dxf_path, "rb") as f:
+                            st.download_button("⬇️ Download Jalan Autocad UTM 60", data=f, file_name="roadmap_osm.dxf")
+
+                except Exception as e:
+                    st.error(f"❌ Terjadi kesalahan: {e}")
+
+if __name__ == "__main__":
+    main()
