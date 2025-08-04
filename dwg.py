@@ -4,33 +4,19 @@ import xml.etree.ElementTree as ET
 from io import BytesIO
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import requests
 import tempfile
+import datetime
 
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SHEET_NAME = "Pole Pekanbaru"
-GOOGLE_MAPS_API_KEY = "AIzaSyB1ux8cTFw-nqW_kCKTqysC3P2WaBElqSU"
 
 def authenticate_google():
     creds_dict = st.secrets["gcp_service_account"]
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    scope = ['https://spreadsheets.google.com/feeds',
+             'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(credentials)
     return client
-
-def reverse_geocode(lat, lon):
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_MAPS_API_KEY}"
-    try:
-        resp = requests.get(url)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data["status"] == "OK" and data["results"]:
-                for comp in data["results"][0]["address_components"]:
-                    if "route" in comp["types"]:
-                        return comp["long_name"].upper()
-        return ""
-    except Exception:
-        return ""
 
 def extract_poles_from_kmz(kmz_path):
     poles = []
@@ -74,27 +60,70 @@ def extract_poles_from_kmz(kmz_path):
                 "PoleName": p["name"],
                 "Latitude": p["lat"],
                 "Longitude": p["lon"],
-                "Street": reverse_geocode(p["lat"], p["lon"])
+                "folder": p["path"]
             })
 
     return poles
 
-def append_to_sheet(sheet, data):
-    for item in data:
+def append_to_sheet(sheet, poles, dupe_values, manual_values):
+    today_fmt = sheet.cell(2, 34).value  # AH column = col 34
+    today = datetime.datetime.today()
+
+    for item in poles:
+        folder = item.get("folder", "")
+        if "7-4" in folder:
+            pole_type = "7m4inch"
+            pole_height = "7"
+        elif "7-3" in folder:
+            pole_type = "7m3inch"
+            pole_height = "7"
+        else:
+            pole_type = "UNKNOWN"
+            pole_height = ""
+
         row = [
-            "", "", "", "", "", 
-            item['Pole_Id'], item['PoleName'],
-            item['Latitude'], item['Longitude'],
-            item['Street']
-        ] + [""] * 18
+            dupe_values.get("Region", ""),
+            dupe_values.get("SubRegion", ""),
+            dupe_values.get("ProvinceName", ""),
+            dupe_values.get("City", ""),
+            manual_values.get("District", ""),
+            manual_values.get("Subdistrict", ""),
+            item["Pole_Id"],
+            item["PoleName"],
+            item["Latitude"],
+            item["Longitude"],
+        ] + [""] * 4 + [
+            dupe_values.get("ConstructionStage", ""),
+            dupe_values.get("Accessibility", ""),
+            dupe_values.get("ActivationStage", ""),
+            dupe_values.get("HierarchyType", "")
+        ] + [""] * 7 + [
+            pole_type
+        ] + [""] * 9 + [
+            pole_height
+        ] + [""] * 3 + [
+            dupe_values.get("InstallationYear", ""),
+            dupe_values.get("ProductionYear", ""),
+            today.strftime(today_fmt),
+        ] + [""] * 8 + [
+            manual_values.get("VendorName", ""),
+            "Cluster"
+        ]
+
         sheet.append_row(row)
 
-st.set_page_config(page_title="Upload Pole", layout="centered")
+st.set_page_config(page_title="Upload Pole KMZ ke Google Sheet", layout="centered")
 st.title("📡 Uploader Pole KMZ ke Google Sheet")
+
+# Input manual
+st.subheader("📝 Keterangan Manual")
+district = st.text_input("District (Kolom E)")
+subdistrict = st.text_input("Subdistrict (Kolom F)")
+vendor = st.text_input("Vendor Name (Kolom AB)")
 
 uploaded_file = st.file_uploader("📤 Upload file .KMZ", type=["kmz"])
 
-if uploaded_file is not None:
+if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
         tmp.write(uploaded_file.read())
         kmz_path = tmp.name
@@ -103,12 +132,33 @@ if uploaded_file is not None:
         poles = extract_poles_from_kmz(kmz_path)
 
     if poles:
-        st.success(f"✅ {len(poles)} titik ditemukan. Mengirim ke Google Sheets...")
         try:
             client = authenticate_google()
             sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-            append_to_sheet(sheet, poles)
-            st.success("✅ Data berhasil dikirim ke Google Sheet 🎉")
+            header = sheet.row_values(2)
+
+            dupe_values = {
+                "Region": header[0],
+                "SubRegion": header[1],
+                "ProvinceName": header[2],
+                "City": header[3],
+                "ConstructionStage": header[13],
+                "Accessibility": header[14],
+                "ActivationStage": header[15],
+                "HierarchyType": header[16],
+                "InstallationYear": header[29],
+                "ProductionYear": header[30],
+            }
+
+            manual_values = {
+                "District": district,
+                "Subdistrict": subdistrict,
+                "VendorName": vendor
+            }
+
+            append_to_sheet(sheet, poles, dupe_values, manual_values)
+            st.success(f"✅ {len(poles)} titik berhasil dikirim ke Google Sheet 🎉")
+
         except Exception as e:
             st.error(f"❌ Gagal mengirim: {e}")
     else:
