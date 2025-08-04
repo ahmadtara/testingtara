@@ -61,13 +61,10 @@ def extract_poles_from_kmz(kmz_path):
                 "Latitude": p["lat"],
                 "Longitude": p["lon"],
                 "Folder": "7m3inch" if "7-3" in p["path"] else "9m4inch" if "9-4" in p["path"] else "7m4inch",
-                "Height": "7" if "7-3" in p["path"] else "9" if "9-4" in p["path"] else "9"
+                "Height": "7" if "7-3" in p["path"] or "7-4" in p["path"] else "9"
             })
 
     return poles
-
-def copy_case(reference: str, value: str):
-    return value.upper() if reference.isupper() else value.lower() if reference.islower() else value
 
 def append_to_sheet(sheet, data, district, subdistrict, vendor):
     values = sheet.get_all_values()
@@ -79,37 +76,43 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
 
     count_types = {"7m3inch": 0, "7m4inch": 0, "9m4inch": 0}
 
+    district = district.upper()
+    subdistrict = subdistrict.upper()
+    vendor = vendor.upper()
+
     all_rows = []
     for pole in data:
         count_types[pole['Folder']] += 1
 
         row = [
-            copy_case(prev_row[0], prev_row[0]),  # A Region
-            copy_case(prev_row[1], prev_row[1]),  # B SubRegion
-            copy_case(prev_row[2], prev_row[2]),  # C ProvinceName
-            copy_case(prev_row[3], prev_row[3]),  # D City
-            district,                             # E
-            subdistrict,                          # F
-            pole['Pole_Id'],                      # G
-            pole['PoleName'],                     # H
-            pole['Latitude'],                     # I
-            pole['Longitude'],                    # J
-            "", "", "", "",                        # K - N kosong
-            copy_case(prev_row[13], prev_row[13]),# N ConstructionStage
-            copy_case(prev_row[14], prev_row[14]),# O accessibility
-            copy_case(prev_row[15], prev_row[15]),# P ActivationStage
-            copy_case(prev_row[16], prev_row[16]),# Q HierarchyType
-            pole['Folder'],                       # R PoleType
-            "", "", "", "", "", "", "", "",         # S - Y kosong
-            pole['Height'],                       # Z Pole Height
-            "", "",                                # AA - AC kosong
-            copy_case(prev_row[30], prev_row[30]),# AD InstallationYear
-            copy_case(prev_row[31], prev_row[31]),# AE ProductionYear
-            vendor,                               # AF / AB VendorName
-            formatted_date,                       # AG / AH InstallationDate
-            "", "", "", "", "", "",                 # AI - AP kosong
-            "Cluster",                            # AQ remark
-            "", "", ""                             # AR - AT kosong
+            prev_row[0].upper(),  # A Region
+            prev_row[1].upper(),  # B SubRegion
+            prev_row[2].upper(),  # C ProvinceName
+            prev_row[3].upper(),  # D City
+            district,             # E District (manual input)
+            subdistrict,          # F Subdistrict (manual input)
+            pole['Pole_Id'],      # G Pole_Id
+            pole['PoleName'],     # H PoleName
+            pole['Latitude'],     # I
+            pole['Longitude'],    # J
+            "", "", "",              # K - M kosong
+            prev_row[13],         # N ConstructionStage
+            prev_row[14],         # O accessibility
+            prev_row[15],         # P ActivationStage
+            prev_row[16],         # Q HierarchyType
+            pole['Folder'],       # R PoleType
+            "", "", "", "", "", "", "", # S - Y kosong
+            pole['Height'],       # Z Pole Height
+            "",                   # AA
+            "",                   # AB
+            vendor,               # AC VendorName (manual input)
+            "",                   # AD InstallationNumber
+            prev_row[30],         # AE InstallationYear
+            prev_row[31],         # AF ProductionYear
+            "",                   # AG InstallationCompany
+            formatted_date,       # AH InstallationDate
+            "", "", "", "", "",     # AI - AN kosong
+            "Cluster"             # AO remark
         ]
         all_rows.append(row)
 
@@ -131,7 +134,7 @@ with col1:
 with col2:
     subdistrict_input = st.text_input("Subdistrict (F)")
 with col3:
-    vendor_input = st.text_input("Vendor Name (AB)")
+    vendor_input = st.text_input("Vendor Name (AC)")
 
 uploaded_file = st.file_uploader("📤 Upload file .KMZ", type=["kmz"])
 
