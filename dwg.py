@@ -75,7 +75,7 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
 
     headers = _cached_headers or sheet.row_values(1)
     _cached_headers = headers
-    header_map = {name: i for i, name in enumerate(headers)}
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
 
     values = sheet.get_all_values()
     cell_count = sum(len(row) for row in values)
@@ -93,7 +93,7 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
     _cached_prev_row = prev_row
 
     today = datetime.today()
-    formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map['InstallationDate']].count("/") == 2 else today.strftime("%Y-%m-%d")
+    formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map.get('installationdate', 0)].count("/") == 2 else today.strftime("%Y-%m-%d")
 
     count_types = {"7m3inch": 0, "7m4inch": 0, "9m4inch": 0}
 
@@ -106,33 +106,35 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
         count_types[pole['Folder']] += 1
 
         row = [""] * len(headers)
-        for col in ['Region', 'SubRegion', 'ProvinceName', 'City', 'ConstructionStage', 'accessibility', 'ActivationStage', 'HierarchyType', 'InstallationYear', 'ProductionYear']:
-            if col in header_map:
-                idx = header_map[col]
-                row[idx] = prev_row[idx].upper() if idx < len(prev_row) else ""
 
-        if 'District' in header_map:
-            row[header_map['District']] = district
-        if 'Subdistrict' in header_map:
-            row[header_map['Subdistrict']] = subdistrict
-        if 'Pole_Id' in header_map:
-            row[header_map['Pole_Id']] = pole['Pole_Id']
-        if 'PoleName' in header_map:
-            row[header_map['PoleName']] = pole['PoleName']
-        if 'Latitude' in header_map:
-            row[header_map['Latitude']] = pole['lat']
-        if 'Longitude' in header_map:
-            row[header_map['Longitude']] = pole['lon']
-        if 'PoleType' in header_map:
-            row[header_map['PoleType']] = pole['Folder']
-        if 'Pole Height' in header_map:
-            row[header_map['Pole Height']] = pole['Height']
-        if 'VendorName' in header_map:
-            row[header_map['VendorName']] = vendor
-        if 'InstallationDate' in header_map:
-            row[header_map['InstallationDate']] = formatted_date
-        if 'remarks' in header_map:
-            row[header_map['remarks']] = "CLUSTER"
+        # Kolom A-J berdasarkan urutan
+        row[0] = prev_row[0] if len(prev_row) > 0 else ""
+        row[1] = prev_row[1] if len(prev_row) > 1 else ""
+        row[2] = prev_row[2] if len(prev_row) > 2 else ""
+        row[3] = prev_row[3] if len(prev_row) > 3 else ""
+        row[4] = district
+        row[5] = subdistrict
+        row[6] = pole['Pole_Id']
+        row[7] = pole['PoleName']
+        row[8] = pole['lat']
+        row[9] = pole['lon']
+
+        for col in ['pole height', 'vendornamE', 'installationyear', 'productionyear', 'installationdate', 'remarks']:
+            idx = header_map.get(col.lower())
+            if idx is not None:
+                if col.lower() == 'pole height':
+                    row[idx] = pole['Height']
+                elif col.lower() == 'vendornamE':
+                    row[idx] = vendor
+                elif col.lower() in ['installationyear', 'productionyear']:
+                    row[idx] = str(today.year)
+                elif col.lower() == 'installationdate':
+                    row[idx] = formatted_date
+                elif col.lower() == 'remarks':
+                    row[idx] = "CLUSTER"
+
+        if 'poletype' in header_map:
+            row[header_map['poletype']] = pole['Folder']
 
         all_rows.append(row)
 
