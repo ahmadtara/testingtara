@@ -79,6 +79,7 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
 
     count_types = {"7m3inch": 0, "7m4inch": 0, "9m4inch": 0}
 
+    all_rows = []
     for pole in data:
         count_types[pole['Folder']] += 1
 
@@ -110,7 +111,9 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
             "Cluster",                            # AQ remark
             "", "", ""                             # AR - AT kosong
         ]
-        sheet.append_row(row)
+        all_rows.append(row)
+
+    sheet.append_rows(all_rows)
 
     st.info(f"""
 📊 **Ringkasan Pengunggahan**:
