@@ -84,36 +84,29 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
     for pole in data:
         count_types[pole['Folder']] += 1
 
-        row = [
-            prev_row[0].upper(),  # A Region
-            prev_row[1].upper(),  # B SubRegion
-            prev_row[2].upper(),  # C ProvinceName
-            prev_row[3].upper(),  # D City
-            district,             # E District (manual input)
-            subdistrict,          # F Subdistrict (manual input)
-            pole['Pole_Id'],      # G Pole_Id
-            pole['PoleName'],     # H PoleName
-            pole['Latitude'],     # I
-            pole['Longitude'],    # J
-            "", "", "",              # K - M kosong
-            prev_row[13],         # N ConstructionStage
-            prev_row[14],         # O accessibility
-            prev_row[15],         # P ActivationStage
-            prev_row[16],         # Q HierarchyType
-            pole['Folder'],       # R PoleType
-            "", "", "", "", "", "", "", # S - Y kosong
-            pole['Height'],       # Z Pole Height
-            "",                   # AA
-            "",                   # AB
-            vendor,               # AC VendorName (manual input)
-            "",                   # AD InstallationNumber
-            prev_row[30],         # AE InstallationYear
-            prev_row[31],         # AF ProductionYear
-            "",                   # AG InstallationCompany
-            formatted_date,       # AH InstallationDate
-            "", "", "", "", "",     # AI - AN kosong
-            "Cluster"             # AO remark
-        ]
+        row = [""] * 44
+        row[0] = prev_row[0].upper()  # A Region
+        row[1] = prev_row[1].upper()  # B SubRegion
+        row[2] = prev_row[2].upper()  # C ProvinceName
+        row[3] = prev_row[3].upper()  # D City
+        row[4] = district              # E District
+        row[5] = subdistrict           # F Subdistrict
+        row[6] = pole['Pole_Id']       # G Pole_Id
+        row[7] = pole['PoleName']      # H PoleName
+        row[8] = pole['Latitude']      # I Latitude
+        row[9] = pole['Longitude']     # J Longitude
+        row[13] = prev_row[13]         # N ConstructionStage
+        row[14] = prev_row[14]         # O accessibility
+        row[15] = prev_row[15]         # P ActivationStage
+        row[16] = prev_row[16]         # Q HierarchyType
+        row[17] = pole['Folder']       # R PoleType
+        row[25] = pole['Height']       # Z Pole Height
+        row[27] = vendor               # AB VendorName
+        row[29] = prev_row[30]         # AD InstallationYear
+        row[30] = prev_row[31]         # AE ProductionYear
+        row[33] = formatted_date       # AH InstallationDate
+        row[42] = "Cluster"            # AQ Remarks
+
         all_rows.append(row)
 
     sheet.append_rows(all_rows)
