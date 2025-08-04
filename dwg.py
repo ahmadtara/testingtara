@@ -10,6 +10,9 @@ from datetime import datetime
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SHEET_NAME = "Pole Pekanbaru"
 
+_cached_headers = None
+_cached_prev_row = None
+
 def authenticate_google():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ['https://spreadsheets.google.com/feeds',
@@ -54,25 +57,40 @@ def extract_poles_from_kmz(kmz_path):
             all_pm += recurse_folder(folder, ns)
 
     for p in all_pm:
-        if "NEW POLE 7-3" in p["path"] or "NEW POLE 7-4" in p["path"] or "NEW POLE 9-4" in p["path"]:
+        base_folder = p["path"].split("/")[0].upper()
+        if base_folder in ["NEW POLE 7-3", "NEW POLE 7-4", "NEW POLE 9-4"]:
             poles.append({
                 "Pole_Id": p["name"],
                 "PoleName": p["name"],
                 "Latitude": p["lat"],
                 "Longitude": p["lon"],
-                "Folder": "7m3inch" if "7-3" in p["path"] else "9m4inch" if "9-4" in p["path"] else "7m4inch",
-                "Height": "7" if "7-3" in p["path"] or "7-4" in p["path"] else "9"
+                "Folder": "7m3inch" if "7-3" in base_folder else "9m4inch" if "9-4" in base_folder else "7m4inch",
+                "Height": "7" if "7-3" in base_folder or "7-4" in base_folder else "9"
             })
 
     return poles
 
 def append_to_sheet(sheet, data, district, subdistrict, vendor):
-    headers = sheet.row_values(1)
+    global _cached_headers, _cached_prev_row
+
+    headers = _cached_headers or sheet.row_values(1)
+    _cached_headers = headers
     header_map = {name: i for i, name in enumerate(headers)}
 
     values = sheet.get_all_values()
-    last_row = max(len(col) for col in values)
-    prev_row = sheet.row_values(last_row)
+    cell_count = sum(len(row) for row in values)
+    if cell_count + len(data) * len(headers) > 10_000_000:
+        st.error("❌ Gagal mengirim: Melebihi batas 10.000.000 sel di Google Sheets")
+        return
+
+    for i in range(len(values)-1, 0, -1):
+        if any(values[i]):
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
+
+    _cached_prev_row = prev_row
 
     today = datetime.today()
     formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map['InstallationDate']].count("/") == 2 else today.strftime("%Y-%m-%d")
