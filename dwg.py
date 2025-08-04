@@ -95,7 +95,7 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
     today = datetime.today()
     formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map.get('installationdate', 0)].count("/") == 2 else today.strftime("%Y-%m-%d")
 
-    count_types = {"7m 3 inch": 0, "7m 4 inch": 0, "9m 4 inch": 0}
+    count_types = {"7m3inch": 0, "7m4inch": 0, "9m4inch": 0}
 
     district = district.upper()
     subdistrict = subdistrict.upper()
@@ -152,9 +152,9 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
 
     st.info(f"""
 📊 **Ringkasan Pengunggahan**:
-- 7m3inch: {count_types['7m 3 inch']} titik
-- 7m4inch: {count_types['7m 4 inch']} titik
-- 9m4inch: {count_types['9m 4 inch']} titik
+- 7m3inch: {count_types['7m3inch']} titik
+- 7m4inch: {count_types['7m4inch']} titik
+- 9m4inch: {count_types['9m4inch']} titik
 """)
 
 st.set_page_config(page_title="Upload Pole", layout="centered")
