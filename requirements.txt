@@ -1,6 +1,6 @@
 streamlit
-geopandas
-osmnx
-shapely
-ezdxf
+gspread
+oauth2client
 fastkml
+shapely
+pandas
