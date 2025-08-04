@@ -4,18 +4,33 @@ import xml.etree.ElementTree as ET
 from io import BytesIO
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import requests
 import tempfile
 
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SHEET_NAME = "Pole Pekanbaru"
+GOOGLE_MAPS_API_KEY = "AIzaSyB1ux8cTFw-nqW_kCKTqysC3P2WaBElqSU"
 
 def authenticate_google():
     creds_dict = st.secrets["gcp_service_account"]
-    scope = ['https://spreadsheets.google.com/feeds',
-             'https://www.googleapis.com/auth/drive']
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(credentials)
     return client
+
+def reverse_geocode(lat, lon):
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_MAPS_API_KEY}"
+    try:
+        resp = requests.get(url)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data["status"] == "OK" and data["results"]:
+                for comp in data["results"][0]["address_components"]:
+                    if "route" in comp["types"]:
+                        return comp["long_name"].upper()
+        return ""
+    except Exception:
+        return ""
 
 def extract_poles_from_kmz(kmz_path):
     poles = []
@@ -52,14 +67,14 @@ def extract_poles_from_kmz(kmz_path):
         for folder in root.findall(".//kml:Folder", ns):
             all_pm += recurse_folder(folder, ns)
 
-    # filter hanya NEW POLE 7-3 dan 7-4
     for p in all_pm:
         if "NEW POLE 7-3" in p["path"] or "NEW POLE 7-4" in p["path"]:
             poles.append({
                 "Pole_Id": p["name"],
                 "PoleName": p["name"],
                 "Latitude": p["lat"],
-                "Longitude": p["lon"]
+                "Longitude": p["lon"],
+                "Street": reverse_geocode(p["lat"], p["lon"])
             })
 
     return poles
@@ -69,8 +84,9 @@ def append_to_sheet(sheet, data):
         row = [
             "", "", "", "", "", 
             item['Pole_Id'], item['PoleName'],
-            item['Latitude'], item['Longitude']
-        ] + [""] * 19
+            item['Latitude'], item['Longitude'],
+            item['Street']
+        ] + [""] * 18
         sheet.append_row(row)
 
 st.set_page_config(page_title="Upload Pole", layout="centered")
