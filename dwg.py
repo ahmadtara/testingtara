@@ -67,12 +67,15 @@ def extract_poles_from_kmz(kmz_path):
     return poles
 
 def append_to_sheet(sheet, data, district, subdistrict, vendor):
+    headers = sheet.row_values(1)
+    header_map = {name: i for i, name in enumerate(headers)}
+
     values = sheet.get_all_values()
     last_row = max(len(col) for col in values)
     prev_row = sheet.row_values(last_row)
 
     today = datetime.today()
-    formatted_date = today.strftime("%d/%m/%Y") if prev_row[33].count("/") == 2 else today.strftime("%Y-%m-%d")
+    formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map['InstallationDate']].count("/") == 2 else today.strftime("%Y-%m-%d")
 
     count_types = {"7m3inch": 0, "7m4inch": 0, "9m4inch": 0}
 
@@ -84,28 +87,34 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
     for pole in data:
         count_types[pole['Folder']] += 1
 
-        row = [""] * 44
-        row[0] = prev_row[0].upper()  # A Region
-        row[1] = prev_row[1].upper()  # B SubRegion
-        row[2] = prev_row[2].upper()  # C ProvinceName
-        row[3] = prev_row[3].upper()  # D City
-        row[4] = district              # E District
-        row[5] = subdistrict           # F Subdistrict
-        row[6] = pole['Pole_Id']       # G Pole_Id
-        row[7] = pole['PoleName']      # H PoleName
-        row[8] = pole['Latitude']      # I Latitude
-        row[9] = pole['Longitude']     # J Longitude
-        row[13] = prev_row[13]         # N ConstructionStage
-        row[14] = prev_row[14]         # O accessibility
-        row[15] = prev_row[15]         # P ActivationStage
-        row[16] = prev_row[16]         # Q HierarchyType
-        row[17] = pole['Folder']       # R PoleType
-        row[25] = pole['Height']       # Z Pole Height
-        row[27] = vendor               # AB VendorName
-        row[29] = prev_row[30]         # AD InstallationYear
-        row[30] = prev_row[31]         # AE ProductionYear
-        row[33] = formatted_date       # AH InstallationDate
-        row[42] = "Cluster"            # AQ Remarks
+        row = [""] * len(headers)
+        for col in ['Region', 'SubRegion', 'ProvinceName', 'City', 'ConstructionStage', 'accessibility', 'ActivationStage', 'HierarchyType', 'InstallationYear', 'ProductionYear']:
+            if col in header_map:
+                idx = header_map[col]
+                row[idx] = prev_row[idx].upper() if idx < len(prev_row) else ""
+
+        if 'District' in header_map:
+            row[header_map['District']] = district
+        if 'Subdistrict' in header_map:
+            row[header_map['Subdistrict']] = subdistrict
+        if 'Pole_Id' in header_map:
+            row[header_map['Pole_Id']] = pole['Pole_Id']
+        if 'PoleName' in header_map:
+            row[header_map['PoleName']] = pole['PoleName']
+        if 'Latitude' in header_map:
+            row[header_map['Latitude']] = pole['Latitude']
+        if 'Longitude' in header_map:
+            row[header_map['Longitude']] = pole['Longitude']
+        if 'PoleType' in header_map:
+            row[header_map['PoleType']] = pole['Folder']
+        if 'Pole Height' in header_map:
+            row[header_map['Pole Height']] = pole['Height']
+        if 'VendorName' in header_map:
+            row[header_map['VendorName']] = vendor
+        if 'InstallationDate' in header_map:
+            row[header_map['InstallationDate']] = formatted_date
+        if 'remarks' in header_map:
+            row[header_map['remarks']] = "Cluster"
 
         all_rows.append(row)
 
@@ -127,7 +136,7 @@ with col1:
 with col2:
     subdistrict_input = st.text_input("Subdistrict (F)")
 with col3:
-    vendor_input = st.text_input("Vendor Name (AC)")
+    vendor_input = st.text_input("Vendor Name (AB)")
 
 uploaded_file = st.file_uploader("📤 Upload file .KMZ", type=["kmz"])
 
