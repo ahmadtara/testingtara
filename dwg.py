@@ -5,7 +5,7 @@ from io import BytesIO
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import tempfile
-import datetime
+from datetime import datetime
 
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SHEET_NAME = "Pole Pekanbaru"
@@ -54,76 +54,85 @@ def extract_poles_from_kmz(kmz_path):
             all_pm += recurse_folder(folder, ns)
 
     for p in all_pm:
-        if "NEW POLE 7-3" in p["path"] or "NEW POLE 7-4" in p["path"]:
+        if "NEW POLE 7-3" in p["path"] or "NEW POLE 7-4" in p["path"] or "NEW POLE 9-4" in p["path"]:
             poles.append({
                 "Pole_Id": p["name"],
                 "PoleName": p["name"],
                 "Latitude": p["lat"],
                 "Longitude": p["lon"],
-                "folder": p["path"]
+                "Folder": "7m3inch" if "7-3" in p["path"] else "9m4inch" if "9-4" in p["path"] else "7m4inch",
+                "Height": "7" if "7-3" in p["path"] else "9" if "9-4" in p["path"] else "9"
             })
 
     return poles
 
-def append_to_sheet(sheet, poles, dupe_values, manual_values):
-    today_fmt = sheet.cell(2, 34).value  # AH column = col 34
-    today = datetime.datetime.today()
+def copy_case(reference: str, value: str):
+    return value.upper() if reference.isupper() else value.lower() if reference.islower() else value
 
-    for item in poles:
-        folder = item.get("folder", "")
-        if "7-4" in folder:
-            pole_type = "7m4inch"
-            pole_height = "7"
-        elif "7-3" in folder:
-            pole_type = "7m3inch"
-            pole_height = "7"
-        else:
-            pole_type = "UNKNOWN"
-            pole_height = ""
+def append_to_sheet(sheet, data, district, subdistrict, vendor):
+    values = sheet.get_all_values()
+    last_row = max(len(col) for col in values)
+    prev_row = sheet.row_values(last_row)
+
+    today = datetime.today()
+    formatted_date = today.strftime("%d/%m/%Y") if prev_row[33].count("/") == 2 else today.strftime("%Y-%m-%d")
+
+    count_types = {"7m3inch": 0, "7m4inch": 0, "9m4inch": 0}
+
+    for pole in data:
+        count_types[pole['Folder']] += 1
 
         row = [
-            dupe_values.get("Region", ""),
-            dupe_values.get("SubRegion", ""),
-            dupe_values.get("ProvinceName", ""),
-            dupe_values.get("City", ""),
-            manual_values.get("District", ""),
-            manual_values.get("Subdistrict", ""),
-            item["Pole_Id"],
-            item["PoleName"],
-            item["Latitude"],
-            item["Longitude"],
-        ] + [""] * 4 + [
-            dupe_values.get("ConstructionStage", ""),
-            dupe_values.get("Accessibility", ""),
-            dupe_values.get("ActivationStage", ""),
-            dupe_values.get("HierarchyType", "")
-        ] + [""] * 7 + [
-            pole_type
-        ] + [""] * 9 + [
-            pole_height
-        ] + [""] * 3 + [
-            dupe_values.get("InstallationYear", ""),
-            dupe_values.get("ProductionYear", ""),
-            today.strftime(today_fmt),
-        ] + [""] * 8 + [
-            manual_values.get("VendorName", ""),
-            "Cluster"
+            copy_case(prev_row[0], prev_row[0]),  # A Region
+            copy_case(prev_row[1], prev_row[1]),  # B SubRegion
+            copy_case(prev_row[2], prev_row[2]),  # C ProvinceName
+            copy_case(prev_row[3], prev_row[3]),  # D City
+            district,                             # E
+            subdistrict,                          # F
+            pole['Pole_Id'],                      # G
+            pole['PoleName'],                     # H
+            pole['Latitude'],                     # I
+            pole['Longitude'],                    # J
+            "", "", "", "",                        # K - N kosong
+            copy_case(prev_row[13], prev_row[13]),# N ConstructionStage
+            copy_case(prev_row[14], prev_row[14]),# O accessibility
+            copy_case(prev_row[15], prev_row[15]),# P ActivationStage
+            copy_case(prev_row[16], prev_row[16]),# Q HierarchyType
+            pole['Folder'],                       # R PoleType
+            "", "", "", "", "", "", "", "",         # S - Y kosong
+            pole['Height'],                       # Z Pole Height
+            "", "",                                # AA - AC kosong
+            copy_case(prev_row[30], prev_row[30]),# AD InstallationYear
+            copy_case(prev_row[31], prev_row[31]),# AE ProductionYear
+            vendor,                               # AF / AB VendorName
+            formatted_date,                       # AG / AH InstallationDate
+            "", "", "", "", "", "",                 # AI - AP kosong
+            "Cluster",                            # AQ remark
+            "", "", ""                             # AR - AT kosong
         ]
-
         sheet.append_row(row)
 
-st.set_page_config(page_title="Upload Pole KMZ ke Google Sheet", layout="centered")
+    st.info(f"""
+📊 **Ringkasan Pengunggahan**:
+- 7m3inch: {count_types['7m3inch']} titik
+- 7m4inch: {count_types['7m4inch']} titik
+- 9m4inch: {count_types['9m4inch']} titik
+""")
+
+st.set_page_config(page_title="Upload Pole", layout="centered")
 st.title("📡 Uploader Pole KMZ ke Google Sheet")
 
-# Input manual
-st.subheader("📝 Keterangan Manual")
-district = st.text_input("District (Kolom E)")
-subdistrict = st.text_input("Subdistrict (Kolom F)")
-vendor = st.text_input("Vendor Name (Kolom AB)")
+col1, col2, col3 = st.columns(3)
+with col1:
+    district_input = st.text_input("District (E)")
+with col2:
+    subdistrict_input = st.text_input("Subdistrict (F)")
+with col3:
+    vendor_input = st.text_input("Vendor Name (AB)")
 
 uploaded_file = st.file_uploader("📤 Upload file .KMZ", type=["kmz"])
 
-if uploaded_file:
+if uploaded_file is not None:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
         tmp.write(uploaded_file.read())
         kmz_path = tmp.name
@@ -132,34 +141,13 @@ if uploaded_file:
         poles = extract_poles_from_kmz(kmz_path)
 
     if poles:
+        st.success(f"✅ {len(poles)} titik ditemukan. Mengirim ke Google Sheets...")
         try:
             client = authenticate_google()
             sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-            header = sheet.row_values(2)
-
-            dupe_values = {
-                "Region": header[0],
-                "SubRegion": header[1],
-                "ProvinceName": header[2],
-                "City": header[3],
-                "ConstructionStage": header[13],
-                "Accessibility": header[14],
-                "ActivationStage": header[15],
-                "HierarchyType": header[16],
-                "InstallationYear": header[29],
-                "ProductionYear": header[30],
-            }
-
-            manual_values = {
-                "District": district,
-                "Subdistrict": subdistrict,
-                "VendorName": vendor
-            }
-
-            append_to_sheet(sheet, poles, dupe_values, manual_values)
-            st.success(f"✅ {len(poles)} titik berhasil dikirim ke Google Sheet 🎉")
-
+            append_to_sheet(sheet, poles, district_input, subdistrict_input, vendor_input)
+            st.success("✅ Data berhasil dikirim ke Google Sheet 🎉")
         except Exception as e:
             st.error(f"❌ Gagal mengirim: {e}")
     else:
-        st.warning("⚠️ Tidak ada folder NEW POLE 7-3 atau 7-4 ditemukan dalam file KMZ.")
+        st.warning("⚠️ Tidak ada folder NEW POLE 7-3, 7-4, atau 9-4 ditemukan dalam file KMZ.")
