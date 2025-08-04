@@ -62,8 +62,8 @@ def extract_poles_from_kmz(kmz_path):
             poles.append({
                 "Pole_Id": p["name"],
                 "PoleName": p["name"],
-                "Latitude": p["lat"],
-                "Longitude": p["lon"],
+                "lat": p["lat"],
+                "lon": p["lon"],
                 "Folder": "7m3inch" if "7-3" in base_folder else "9m4inch" if "9-4" in base_folder else "7m4inch",
                 "Height": "7" if "7-3" in base_folder or "7-4" in base_folder else "9"
             })
@@ -120,9 +120,9 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
         if 'PoleName' in header_map:
             row[header_map['PoleName']] = pole['PoleName']
         if 'Latitude' in header_map:
-            row[header_map['Latitude']] = pole['Latitude']
+            row[header_map['Latitude']] = pole['lat']
         if 'Longitude' in header_map:
-            row[header_map['Longitude']] = pole['Longitude']
+            row[header_map['Longitude']] = pole['lon']
         if 'PoleType' in header_map:
             row[header_map['PoleType']] = pole['Folder']
         if 'Pole Height' in header_map:
@@ -132,7 +132,7 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
         if 'InstallationDate' in header_map:
             row[header_map['InstallationDate']] = formatted_date
         if 'remarks' in header_map:
-            row[header_map['remarks']] = "Cluster"
+            row[header_map['remarks']] = "CLUSTER"
 
         all_rows.append(row)
 
