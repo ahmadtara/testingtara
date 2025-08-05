@@ -1,3 +1,5 @@
+# uploader_cluster_subfeeder_submit.py
+
 import streamlit as st
 import zipfile
 import xml.etree.ElementTree as ET
@@ -70,7 +72,7 @@ def extract_poles_from_kmz(kmz_path):
 
     return poles
 
-def append_to_sheet(sheet, data, district, subdistrict, vendor):
+def append_to_sheet(sheet, data, district, subdistrict, vendor, remarks_label):
     global _cached_headers, _cached_prev_row
 
     headers = _cached_headers or sheet.row_values(1)
@@ -107,11 +109,7 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
 
         row = [""] * len(headers)
 
-        # Kolom A-J berdasarkan urutan
-        row[0] = prev_row[0] if len(prev_row) > 0 else ""
-        row[1] = prev_row[1] if len(prev_row) > 1 else ""
-        row[2] = prev_row[2] if len(prev_row) > 2 else ""
-        row[3] = prev_row[3] if len(prev_row) > 3 else ""
+        row[0:4] = prev_row[0:4]
         row[4] = district
         row[5] = subdistrict
         row[6] = pole['Pole_Id']
@@ -119,15 +117,9 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
         row[8] = pole['lat']
         row[9] = pole['lon']
 
-        # Kolom N-Q berdasarkan nama header
-        if 'constructionstage' in header_map:
-            row[header_map['constructionstage']] = prev_row[header_map['constructionstage']]
-        if 'accessibility' in header_map:
-            row[header_map['accessibility']] = prev_row[header_map['accessibility']]
-        if 'activationstage' in header_map:
-            row[header_map['activationstage']] = prev_row[header_map['activationstage']]
-        if 'hierarchytype' in header_map:
-            row[header_map['hierarchytype']] = prev_row[header_map['hierarchytype']]
+        for col in ['constructionstage', 'accessibility', 'activationstage', 'hierarchytype']:
+            if col in header_map:
+                row[header_map[col]] = prev_row[header_map[col]]
 
         for col in ['pole height', 'vendorname', 'installationyear', 'productionyear', 'installationdate', 'remarks']:
             idx = header_map.get(col.lower())
@@ -141,7 +133,7 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
                 elif col.lower() == 'installationdate':
                     row[idx] = formatted_date
                 elif col.lower() == 'remarks':
-                    row[idx] = "CLUSTER"
+                    row[idx] = remarks_label
 
         if 'poletype' in header_map:
             row[header_map['poletype']] = pole['Folder']
@@ -151,14 +143,16 @@ def append_to_sheet(sheet, data, district, subdistrict, vendor):
     sheet.append_rows(all_rows)
 
     st.info(f"""
-📊 **Ringkasan Pengunggahan**:
+📊 **Ringkasan Pengunggahan ({remarks_label})**:
 - 7m3inch: {count_types['7m3inch']} titik
 - 7m4inch: {count_types['7m4inch']} titik
 - 9m4inch: {count_types['9m4inch']} titik
 """)
 
-st.set_page_config(page_title="Upload Pole", layout="centered")
-st.title("📡 Uploader Pole KMZ ke Google Sheet")
+# ========== UI STREAMLIT ==========
+
+st.set_page_config(page_title="Uploader Pole KMZ", layout="centered")
+st.title("📡 Uploader Pole KMZ (CLUSTER + SUBFEEDER)")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -168,24 +162,44 @@ with col2:
 with col3:
     vendor_input = st.text_input("Vendor Name (AB)")
 
-uploaded_file = st.file_uploader("📤 Upload file .KMZ", type=["kmz"])
+uploaded_cluster = st.file_uploader("📤 Upload file .KMZ CLUSTER", type=["kmz"])
+uploaded_subfeeder = st.file_uploader("📤 Upload file .KMZ SUBFEEDER", type=["kmz"])
 
-if uploaded_file is not None:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
-        tmp.write(uploaded_file.read())
-        kmz_path = tmp.name
+submit_clicked = st.button("🚀 Submit dan Kirim ke Google Sheet")
 
-    with st.spinner("🔍 Membaca dan memproses KMZ..."):
-        poles = extract_poles_from_kmz(kmz_path)
-
-    if poles:
-        st.success(f"✅ {len(poles)} titik ditemukan. Mengirim ke Google Sheets...")
+if submit_clicked:
+    if not district_input or not subdistrict_input or not vendor_input:
+        st.warning("⚠️ Harap isi semua kolom input manual.")
+    elif not uploaded_cluster and not uploaded_subfeeder:
+        st.warning("⚠️ Harap upload minimal satu file KMZ (CLUSTER atau SUBFEEDER).")
+    else:
         try:
             client = authenticate_google()
             sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-            append_to_sheet(sheet, poles, district_input, subdistrict_input, vendor_input)
-            st.success("✅ Data berhasil dikirim ke Google Sheet 🎉")
         except Exception as e:
-            st.error(f"❌ Gagal mengirim: {e}")
-    else:
-        st.warning("⚠️ Tidak ada folder NEW POLE 7-3, 7-4, atau 9-4 ditemukan dalam file KMZ.")
+            st.error(f"❌ Gagal autentikasi Google Sheet: {e}")
+            st.stop()
+
+        if uploaded_cluster:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+                tmp.write(uploaded_cluster.read())
+                kmz_path = tmp.name
+            with st.spinner("📦 Memproses CLUSTER..."):
+                poles = extract_poles_from_kmz(kmz_path)
+                if poles:
+                    append_to_sheet(sheet, poles, district_input, subdistrict_input, vendor_input, "CLUSTER")
+                    st.success("✅ Data CLUSTER berhasil dikirim.")
+                else:
+                    st.warning("⚠️ Tidak ada data ditemukan dalam file CLUSTER.")
+
+        if uploaded_subfeeder:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+                tmp.write(uploaded_subfeeder.read())
+                kmz_path = tmp.name
+            with st.spinner("📦 Memproses SUBFEEDER..."):
+                poles = extract_poles_from_kmz(kmz_path)
+                if poles:
+                    append_to_sheet(sheet, poles, district_input, subdistrict_input, vendor_input, "SUBFEEDER")
+                    st.success("✅ Data SUBFEEDER berhasil dikirim.")
+                else:
+                    st.warning("⚠️ Tidak ada data ditemukan dalam file SUBFEEDER.")
