@@ -11,7 +11,7 @@ dist = __import__('math').dist
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SPREADSHEET_ID_2 = "1WI0Gb8ul5GPUND4ADvhFgH4GSlgwq1_4rRgfOnPz-yc"
 SHEET_NAME = "Pole Pekanbaru"
-SHEET_NAME_2 = "Fat Pekanbaru"
+SHEET_NAME_2 = "FAT Pekanbaru"
 _cached_headers = None
 _cached_prev_row = None
 
@@ -265,4 +265,5 @@ if submit_clicked:
                 append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
         except Exception as e:
             st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
+
 
