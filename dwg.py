@@ -63,6 +63,12 @@ def extract_points_from_kmz(kmz_path):
             poles.append({**p, "folder": "7m4inch", "height": "7"})
         elif base_folder == "NEW POLE 9-4":
             poles.append({**p, "folder": "9m4inch", "height": "9"})
+        elif base_folder == "EXISTING POLE EMR 7-4":
+            poles.append({**p, "folder": "ext7m4inch", "height": "7"})
+        elif base_folder == "EXISTING POLE EMR 7-3":
+            poles.append({**p, "folder": "ext7m3inch", "height": "7"})
+        elif base_folder == "EXISTING POLE EMR 9-4":
+            poles.append({**p, "folder": "ext9m4inch", "height": "9"})
 
     return fat_points, poles, poles_subfeeder
 
@@ -113,7 +119,9 @@ def append_fat_to_sheet(sheet, fat_points, poles, district, subdistrict, vendor)
 
         idx_ag = header_map.get('parentid 1')
         if idx_ag is not None:
-            row[idx_ag] = find_nearest_pole(fat, [p for p in poles if p['folder'] == '7m3inch'])
+            row[idx_ag] = find_nearest_pole(fat, [
+                p for p in poles if p['folder'] in ['7m4inch', '7m3inch', 'ext7m3inch', 'ext7m4inch', 'ext9m4inch']
+            ])
 
         for col in ['parent_type 1', 'fat type']:
             idx = header_map.get(col.lower())
@@ -265,5 +273,6 @@ if submit_clicked:
                 append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
         except Exception as e:
             st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
+
 
 
