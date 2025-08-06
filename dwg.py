@@ -243,7 +243,7 @@ if submit_clicked:
 
         if fat_points:
             try:
-                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME)
+                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME_2)
                 append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
             except Exception as e:
                 st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
@@ -265,3 +265,4 @@ if submit_clicked:
                 append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
         except Exception as e:
             st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
+
