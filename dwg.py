@@ -36,8 +36,12 @@ def get_drive_service():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            st.warning("🔐 Buka URL login Google yang muncul di terminal dan tempelkan kode verifikasi.")
-            creds = flow.run_console()  # Pakai login manual
+            creds = flow.run_local_server(
+                port=8501,
+                authorization_prompt_message='🔐 Klik link untuk login Google di tab baru:',
+                success_message='✅ Login berhasil, silakan kembali ke aplikasi Streamlit.',
+                open_browser=True
+            )
         with open("token.pkl", "wb") as token:
             pickle.dump(creds, token)
 
