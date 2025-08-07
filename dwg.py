@@ -3,7 +3,7 @@ import zipfile
 import tempfile
 import os
 import pickle
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
@@ -15,7 +15,6 @@ uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT &
 uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
 submit_clicked = st.button("🚀 Upload ke Google Drive")
 
-# Folder tujuan Google Drive
 GDRIVE_FOLDERS = {
     "DISTRIBUTION CABLE": "1XkWqvRX4SUYMrtMQ7vt8197oSja4r9p-",
     "BOUNDARY CLUSTER": "1IMpaQWnpG8c8P5j3phUMP1G9zTPBDQMi",
@@ -26,24 +25,40 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 def get_drive_service():
     creds = None
-    # Coba ambil token dari file
+
     if os.path.exists("token.pkl"):
         with open("token.pkl", "rb") as token:
             creds = pickle.load(token)
 
-    # Jika belum login atau token expired
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            st.warning("🔐 Silakan buka link login yang muncul di terminal dan masukkan kodenya.")
-            creds = flow.run_console()
+            flow = Flow.from_client_secrets_file(
+                'credentials.json',
+                scopes=SCOPES,
+                redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+            )
+            auth_url, _ = flow.authorization_url(prompt='consent')
 
-        with open("token.pkl", "wb") as token:
-            pickle.dump(creds, token)
+            st.warning("🔐 Klik tombol login Google dan masukkan kode otorisasi yang muncul setelah login.")
+            if st.button("🔓 Login dengan Google"):
+                st.markdown(f"[Klik di sini untuk login Google]({auth_url})", unsafe_allow_html=True)
 
-    return build("drive", "v3", credentials=creds)
+            auth_code = st.text_input("📥 Tempelkan kode otorisasi dari Google di sini")
+
+            if auth_code:
+                try:
+                    flow.fetch_token(code=auth_code)
+                    creds = flow.credentials
+                    with open("token.pkl", "wb") as token:
+                        pickle.dump(creds, token)
+                    st.success("✅ Login berhasil!")
+                except Exception as e:
+                    st.error(f"❌ Gagal login: {e}")
+                    return None
+
+    return build("drive", "v3", credentials=creds) if creds else None
 
 def extract_kml_from_kmz(kmz_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp_kmz:
@@ -62,6 +77,9 @@ def extract_kml_from_kmz(kmz_file):
 
 def upload_kml_to_drive(kml_path, new_filename, folder_ids):
     service = get_drive_service()
+    if not service:
+        st.stop()
+
     for folder_id in folder_ids:
         file_metadata = {
             'name': new_filename,
