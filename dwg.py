@@ -198,9 +198,9 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
 
     st.info(f"""
 📊 **Ringkasan Pengunggahan**:
-- 7m3inch: {count_types['7m3inch']} titik
-- 7m4inch: {count_types['7m4inch']} titik
-- 9m4inch: {count_types['9m4inch']} titik
+✅ 7m3inch: {count_types['7m3inch']} titik
+✅ 7m4inch: {count_types['7m4inch']} titik
+✅ 9m4inch: {count_types['9m4inch']} titik
 """)
 
 # === STREAMLIT INTERFACE ===
@@ -265,4 +265,5 @@ if submit_clicked:
                 append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
         except Exception as e:
             st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
+
 
