@@ -39,21 +39,37 @@ def get_drive_service():
                 scopes=SCOPES,
                 redirect_uri='urn:ietf:wg:oauth:2.0:oob'
             )
-            auth_url, _ = flow.authorization_url(prompt='consent')
 
-            st.warning("🔐 Klik tombol login Google dan masukkan kode otorisasi yang muncul setelah login.")
-            if st.button("🔓 Login dengan Google"):
-                st.markdown(f"[Klik di sini untuk login Google]({auth_url})", unsafe_allow_html=True)
+            # Generate only once
+            if "auth_url" not in st.session_state:
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                st.session_state.auth_url = auth_url
+                st.session_state.flow = flow
+
+            st.warning("🔐 Klik tombol di bawah untuk login Google, lalu tempelkan kode yang diberikan.")
+            login_url = st.session_state.auth_url
+            login_button_html = f'''
+                <a href="{login_url}" target="_blank">
+                    <button style='background-color:#0A84FF;color:white;padding:10px 20px;
+                    border:none;border-radius:5px;cursor:pointer;font-size:16px'>
+                        🔐 Login dengan Google
+                    </button>
+                </a>
+            '''
+            st.markdown(login_button_html, unsafe_allow_html=True)
 
             auth_code = st.text_input("📥 Tempelkan kode otorisasi dari Google di sini")
 
             if auth_code:
                 try:
+                    flow = st.session_state.flow
                     flow.fetch_token(code=auth_code)
                     creds = flow.credentials
                     with open("token.pkl", "wb") as token:
                         pickle.dump(creds, token)
                     st.success("✅ Login berhasil!")
+                    del st.session_state.auth_url
+                    del st.session_state.flow
                 except Exception as e:
                     st.error(f"❌ Gagal login: {e}")
                     return None
