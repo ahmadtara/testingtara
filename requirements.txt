@@ -4,3 +4,8 @@ oauth2client
 fastkml
 shapely
 pandas
+google-api-python-client>=2.120.0
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+pyproj
