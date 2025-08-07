@@ -2,33 +2,45 @@ import streamlit as st
 import zipfile
 import tempfile
 import os
-from google.oauth2 import service_account
+import pickle
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 
 st.set_page_config(page_title="Uploader FAT Splitter", layout="centered")
-st.title("📡 Uploader FAT Splitter (Tanpa Login)")
+st.title("📡 Uploader FAT Splitter")
 
 uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
 uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
 submit_clicked = st.button("🚀 Upload ke Google Drive")
 
+# Folder tujuan Google Drive
 GDRIVE_FOLDERS = {
     "DISTRIBUTION CABLE": "1XkWqvRX4SUYMrtMQ7vt8197oSja4r9p-",
     "BOUNDARY CLUSTER": "1IMpaQWnpG8c8P5j3phUMP1G9zTPBDQMi",
     "CABLE": "16aesqK-OIqYIDAIn_ymLzf1-VkLyXonl"
 }
 
-SERVICE_ACCOUNT_FILE = "service_account_credentials.json"  # ganti sesuai nama file JSON kamu
+# Scope minimum untuk upload file
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
-@st.cache_resource
 def get_drive_service():
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE,
-        scopes=SCOPES
-    )
-    return build("drive", "v3", credentials=credentials)
+    creds = None
+    if os.path.exists("token.pkl"):
+        with open("token.pkl", "rb") as token:
+            creds = pickle.load(token)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            creds = flow.run_local_server(port=0)
+        with open("token.pkl", "wb") as token:
+            pickle.dump(creds, token)
+
+    return build("drive", "v3", credentials=creds)
 
 def extract_kml_from_kmz(kmz_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp_kmz:
@@ -45,7 +57,7 @@ def extract_kml_from_kmz(kmz_file):
             tmp_kml.write(zf.read(kml_filename))
             return tmp_kml.name, os.path.splitext(os.path.basename(kmz_path))[0] + ".kml"
 
-def upload_kml_to_drive(kml_path, new_filename, folder_ids):
+def upload_kml_to_drive_oauth(kml_path, new_filename, folder_ids):
     service = get_drive_service()
     for folder_id in folder_ids:
         file_metadata = {
@@ -63,12 +75,13 @@ def upload_kml_to_drive(kml_path, new_filename, folder_ids):
         except Exception as e:
             st.error(f"❌ Gagal upload ke folder ID: {folder_id}\n{e}")
 
+# Proses saat tombol diklik
 if submit_clicked:
     if uploaded_cluster:
         st.info("📤 Memproses file KMZ Cluster...")
         kml_path, new_filename = extract_kml_from_kmz(uploaded_cluster)
         if kml_path:
-            upload_kml_to_drive(kml_path, new_filename, [
+            upload_kml_to_drive_oauth(kml_path, new_filename, [
                 GDRIVE_FOLDERS["DISTRIBUTION CABLE"],
                 GDRIVE_FOLDERS["BOUNDARY CLUSTER"]
             ])
@@ -77,6 +90,6 @@ if submit_clicked:
         st.info("📤 Memproses file KMZ Subfeeder...")
         kml_path, new_filename = extract_kml_from_kmz(uploaded_subfeeder)
         if kml_path:
-            upload_kml_to_drive(kml_path, new_filename, [
+            upload_kml_to_drive_oauth(kml_path, new_filename, [
                 GDRIVE_FOLDERS["CABLE"]
             ])
