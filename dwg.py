@@ -3,9 +3,9 @@ import zipfile
 import tempfile
 import os
 import pickle
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
 st.set_page_config(page_title="Uploader FAT Splitter", layout="centered")
@@ -22,26 +22,24 @@ GDRIVE_FOLDERS = {
     "CABLE": "16aesqK-OIqYIDAIn_ymLzf1-VkLyXonl"
 }
 
-# Scope minimum untuk akses file di Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 def get_drive_service():
     creds = None
+    # Coba ambil token dari file
     if os.path.exists("token.pkl"):
         with open("token.pkl", "rb") as token:
             creds = pickle.load(token)
 
+    # Jika belum login atau token expired
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(
-                port=8501,
-                authorization_prompt_message='🔐 Klik link untuk login Google di tab baru:',
-                success_message='✅ Login berhasil, silakan kembali ke aplikasi Streamlit.',
-                open_browser=True
-            )
+            st.warning("🔐 Silakan buka link login yang muncul di terminal dan masukkan kodenya.")
+            creds = flow.run_console()
+
         with open("token.pkl", "wb") as token:
             pickle.dump(creds, token)
 
@@ -62,7 +60,7 @@ def extract_kml_from_kmz(kmz_file):
             tmp_kml.write(zf.read(kml_filename))
             return tmp_kml.name, os.path.splitext(os.path.basename(kmz_path))[0] + ".kml"
 
-def upload_kml_to_drive_oauth(kml_path, new_filename, folder_ids):
+def upload_kml_to_drive(kml_path, new_filename, folder_ids):
     service = get_drive_service()
     for folder_id in folder_ids:
         file_metadata = {
@@ -85,7 +83,7 @@ if submit_clicked:
         st.info("📤 Memproses file KMZ Cluster...")
         kml_path, new_filename = extract_kml_from_kmz(uploaded_cluster)
         if kml_path:
-            upload_kml_to_drive_oauth(kml_path, new_filename, [
+            upload_kml_to_drive(kml_path, new_filename, [
                 GDRIVE_FOLDERS["DISTRIBUTION CABLE"],
                 GDRIVE_FOLDERS["BOUNDARY CLUSTER"]
             ])
@@ -94,6 +92,6 @@ if submit_clicked:
         st.info("📤 Memproses file KMZ Subfeeder...")
         kml_path, new_filename = extract_kml_from_kmz(uploaded_subfeeder)
         if kml_path:
-            upload_kml_to_drive_oauth(kml_path, new_filename, [
+            upload_kml_to_drive(kml_path, new_filename, [
                 GDRIVE_FOLDERS["CABLE"]
             ])
