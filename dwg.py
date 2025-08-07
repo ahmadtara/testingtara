@@ -22,7 +22,7 @@ GDRIVE_FOLDERS = {
     "CABLE": "16aesqK-OIqYIDAIn_ymLzf1-VkLyXonl"
 }
 
-# Scope minimum untuk upload file
+# Scope minimum untuk akses file di Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 def get_drive_service():
@@ -36,7 +36,8 @@ def get_drive_service():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
+            st.warning("🔐 Buka URL login Google yang muncul di terminal dan tempelkan kode verifikasi.")
+            creds = flow.run_console()  # Pakai login manual
         with open("token.pkl", "wb") as token:
             pickle.dump(creds, token)
 
@@ -75,7 +76,6 @@ def upload_kml_to_drive_oauth(kml_path, new_filename, folder_ids):
         except Exception as e:
             st.error(f"❌ Gagal upload ke folder ID: {folder_id}\n{e}")
 
-# Proses saat tombol diklik
 if submit_clicked:
     if uploaded_cluster:
         st.info("📤 Memproses file KMZ Cluster...")
