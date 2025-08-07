@@ -1,85 +1,79 @@
 import streamlit as st
 import os
-import zipfile
 import tempfile
+import zipfile
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google_auth_oauthlib.flow import Flow
 
 st.set_page_config(page_title="Uploader FAT Splitter", layout="centered")
 st.title("📡 Uploader FAT Splitter")
 
-# Folder tujuan Google Drive
+# Folder Google Drive tujuan
 GDRIVE_FOLDERS = {
     "DISTRIBUTION CABLE": "1XkWqvRX4SUYMrtMQ7vt8197oSja4r9p-",
     "BOUNDARY CLUSTER": "1IMpaQWnpG8c8P5j3phUMP1G9zTPBDQMi",
     "CABLE": "16aesqK-OIqYIDAIn_ymLzf1-VkLyXonl"
 }
 
-# Simpan kredensial login pengguna
-if "credentials" not in st.session_state:
-    st.session_state.credentials = None
+# Inisialisasi Flow
+CLIENT_SECRET_FILE = "client_secret.json"
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"  # biar dapet kode otorisasi manual
 
-# Fungsi login OAuth
-def login_with_google():
-    flow = Flow.from_client_secrets_file(
-        "client_secret.json",
-        scopes=["https://www.googleapis.com/auth/drive.file"],
-        redirect_uri="https://tara-capslock.streamlit.app/"
-    )
-    auth_url, _ = flow.authorization_url(prompt="consent")
+flow = Flow.from_client_secrets_file(
+    CLIENT_SECRET_FILE,
+    scopes=SCOPES,
+    redirect_uri=REDIRECT_URI
+)
 
-    st.markdown(f"[🔐 Klik di sini untuk login Google]({auth_url})", unsafe_allow_html=True)
-    auth_code = st.text_input("📥 Tempelkan kode otorisasi dari Google:")
+auth_url, _ = flow.authorization_url(prompt='consent')
 
+# ⬅️ TOMBOL LOGIN
+st.markdown("## 🔐 Login Google Drive")
+st.markdown(f"[Klik untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
+auth_code = st.text_input("Tempelkan kode otorisasi dari Google di sini:")
+
+creds = None
+if st.button("✅ Submit Kode"):
     if auth_code:
         try:
             flow.fetch_token(code=auth_code)
-            st.session_state.credentials = flow.credentials
-            st.success("✅ Login berhasil!")
+            creds = flow.credentials
+            st.success("Login berhasil! ✅ Sekarang kamu bisa upload.")
         except Exception as e:
-            st.error(f"❌ Gagal login: {e}")
+            st.error(f"Gagal login: {e}")
 
-# Fungsi upload ke Google Drive
-def upload_to_drive(file_path, filename, folder_ids):
-    creds = st.session_state.credentials
-    if not creds or not creds.valid:
-        st.error("❌ Anda belum login Google.")
-        return
+# 🔼 Upload file
+uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
+uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
 
-    service = build("drive", "v3", credentials=creds)
+if st.button("🚀 Upload ke Google Drive") and creds:
+    service = build('drive', 'v3', credentials=creds)
 
-    for folder_id in folder_ids:
-        file_metadata = {
-            "name": filename,
-            "parents": [folder_id]
-        }
-        media = MediaFileUpload(file_path, mimetype="application/vnd.google-earth.kmz")
+    def save_and_upload(kmz_file, folder_keys):
+        if kmz_file:
+            temp_dir = tempfile.mkdtemp()
+            kmz_path = os.path.join(temp_dir, kmz_file.name)
+            with open(kmz_path, "wb") as f:
+                f.write(kmz_file.getbuffer())
 
-        try:
-            uploaded = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-            st.success(f"✅ File '{filename}' berhasil diupload ke folder ID: {folder_id}")
-        except Exception as e:
-            st.error(f"❌ Gagal upload ke folder ID: {folder_id}\n{e}")
+            new_filename = kmz_file.name.replace(".kmz", ".kml")
+            with zipfile.ZipFile(kmz_path, 'r') as zip_ref:
+                for file_name in zip_ref.namelist():
+                    if file_name.endswith(".kml"):
+                        zip_ref.extract(file_name, temp_dir)
+                        kml_path = os.path.join(temp_dir, file_name)
 
-# UI login
-st.subheader("🔐 Login Google Drive")
-login_with_google()
+                        for key in folder_keys:
+                            folder_id = GDRIVE_FOLDERS[key]
+                            file_metadata = {'name': new_filename, 'parents': [folder_id]}
+                            media = MediaFileUpload(kml_path, mimetype='application/vnd.google-earth.kml+xml')
+                            service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                            st.success(f"✅ Berhasil upload ke folder {key}")
 
-# Jika sudah login, tampilkan form upload
-if st.session_state.credentials:
-    st.subheader("📤 Upload file .KMZ")
+    st.info("📤 Memproses file KMZ Cluster...")
+    save_and_upload(uploaded_cluster, ["DISTRIBUTION CABLE", "BOUNDARY CLUSTER"])
 
-    uploaded_file = st.file_uploader("📄 Upload file .KMZ CLUSTER", type=["kmz"])
-    if uploaded_file:
-        filename = uploaded_file.name
-        temp_kmz = os.path.join(tempfile.gettempdir(), filename)
-        with open(temp_kmz, "wb") as f:
-            f.write(uploaded_file.read())
-
-        if st.button("🚀 Upload ke Google Drive"):
-            upload_to_drive(temp_kmz, filename, [
-                GDRIVE_FOLDERS["DISTRIBUTION CABLE"],
-                GDRIVE_FOLDERS["BOUNDARY CLUSTER"],
-                GDRIVE_FOLDERS["CABLE"]  # ✅ Sekarang termasuk juga folder CABLE
-            ])
+    st.info("📤 Memproses file KMZ Subfeeder...")
+    save_and_upload(uploaded_subfeeder, ["CABLE"])
