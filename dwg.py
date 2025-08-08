@@ -112,6 +112,70 @@ def extract_folder_as_kml(kmz_file, target_folder_name, output_name):
         ET.ElementTree(new_kml).write(combined_path, encoding="utf-8", xml_declaration=True)
         return combined_path
 
+def extract_folder_with_style(kmz_file, target_folder_name, output_name):
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        # Simpan file kmz ke temp
+        kmz_path = os.path.join(tmpdirname, "temp.kmz")
+        with open(kmz_path, "wb") as f:
+            f.write(kmz_file.read())
+
+        # Ekstrak isi kmz
+        with zipfile.ZipFile(kmz_path, 'r') as z:
+            z.extractall(tmpdirname)
+
+        # Cari doc.kml
+        doc_kml_path = None
+        for root, dirs, files in os.walk(tmpdirname):
+            for file in files:
+                if file.lower() == "doc.kml":
+                    doc_kml_path = os.path.join(root, file)
+                    break
+
+        if not doc_kml_path:
+            print("❌ doc.kml tidak ditemukan.")
+            return None
+
+        # Parse doc.kml
+        tree = ET.parse(doc_kml_path)
+        root = tree.getroot()
+
+        # Namespace (biar tag bisa terbaca dengan benar)
+        ns = {"kml": "http://www.opengis.net/kml/2.2"}
+
+        # Cari folder sesuai nama
+        target_folders = []
+        for folder in root.findall(".//kml:Folder", ns):
+            name_tag = folder.find("kml:name", ns)
+            if name_tag is not None and name_tag.text.strip().lower() == target_folder_name.lower():
+                target_folders.append(folder)
+
+        if not target_folders:
+            print(f"❌ Folder '{target_folder_name}' tidak ditemukan.")
+            return None
+
+        # Buat dokumen baru dengan style asli
+        new_root = ET.Element(root.tag, root.attrib)  # root <kml>
+        for child in root:
+            # Simpan semua style, schema, dll
+            if child.tag.endswith("Document"):
+                new_doc = ET.Element(child.tag, child.attrib)
+                # Salin semua style
+                for sub in child:
+                    if sub.tag.endswith("Style") or sub.tag.endswith("StyleMap") or sub.tag.endswith("Schema"):
+                        new_doc.append(sub)
+                # Masukkan folder target
+                for f in target_folders:
+                    new_doc.append(f)
+                new_root.append(new_doc)
+            else:
+                new_root.append(child)
+
+        # Simpan hasil
+        output_path = os.path.join(tempfile.gettempdir(), output_name)
+        ET.ElementTree(new_root).write(output_path, encoding="utf-8", xml_declaration=True)
+        print(f"✅ Disimpan: {output_path}")
+        return output_path
+
 def upload_kml_to_drive(kml_path, filename, folder_ids):
     if not os.path.exists(kml_path):
         st.error(f"❌ File tidak ditemukan: {kml_path}")
@@ -164,3 +228,4 @@ if submit_clicked:
             upload_kml_to_drive(kml_cable, f"{base_subfeeder_name}_CABLE.kml", [GDRIVE_FOLDERS["CABLE"]])
         else:
             st.error("❌ Tidak ditemukan folder CABLE di dalam KMZ.")
+
