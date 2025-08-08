@@ -63,6 +63,7 @@ def get_drive_service():
 
 def extract_folder_as_kml(kmz_file, target_folder_name, output_name):
     with tempfile.TemporaryDirectory() as tmpdirname:
+        kmz_file.seek(0)  # Reset pointer file
         kmz_path = os.path.join(tmpdirname, kmz_file.name)
         with open(kmz_path, "wb") as f:
             f.write(kmz_file.read())
@@ -74,8 +75,14 @@ def extract_folder_as_kml(kmz_file, target_folder_name, output_name):
             st.error("❌ File KMZ bukan file zip yang valid.")
             return None
 
-        doc_kml_path = os.path.join(tmpdirname, "doc.kml")
-        if not os.path.exists(doc_kml_path):
+        # Cari doc.kml di semua folder
+        doc_kml_path = None
+        for root_dir, dirs, files in os.walk(tmpdirname):
+            for file in files:
+                if file.lower() == "doc.kml":
+                    doc_kml_path = os.path.join(root_dir, file)
+                    break
+        if not doc_kml_path:
             st.error("❌ Tidak ditemukan doc.kml di dalam KMZ.")
             return None
 
@@ -84,22 +91,22 @@ def extract_folder_as_kml(kmz_file, target_folder_name, output_name):
         root = tree.getroot()
         ns = {"kml": "http://www.opengis.net/kml/2.2"}
 
-        # Cari folder target
+        # Cari folder target (lebih fleksibel)
         target_folders = []
         for folder in root.findall(".//kml:Folder", ns):
             name_tag = folder.find("kml:name", ns)
-            if name_tag is not None and name_tag.text and target_folder_name.lower() in name_tag.text.lower():
+            if name_tag is not None and target_folder_name.lower() in name_tag.text.strip().lower():
                 target_folders.append(folder)
 
         if not target_folders:
             return None
 
-        # Buat KML baru dengan struktur asli, tapi hanya folder target
+        # Buat KML baru
         new_kml = ET.Element(root.tag, root.attrib)
         for child in root:
             if child.tag.endswith("Document"):
                 new_doc = ET.SubElement(new_kml, child.tag, child.attrib)
-                # Copy style & schema dari doc asli
+                # Copy style/schema
                 for doc_child in child:
                     if not doc_child.tag.endswith("Folder"):
                         new_doc.append(doc_child)
@@ -107,10 +114,10 @@ def extract_folder_as_kml(kmz_file, target_folder_name, output_name):
                 for folder in target_folders:
                     new_doc.append(folder)
 
-        # Simpan ke file
         combined_path = os.path.join(tempfile.gettempdir(), output_name)
         ET.ElementTree(new_kml).write(combined_path, encoding="utf-8", xml_declaration=True)
         return combined_path
+
 
 def extract_folder_with_style(kmz_file, target_folder_name, output_name):
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -228,4 +235,5 @@ if submit_clicked:
             upload_kml_to_drive(kml_cable, f"{base_subfeeder_name}_CABLE.kml", [GDRIVE_FOLDERS["CABLE"]])
         else:
             st.error("❌ Tidak ditemukan folder CABLE di dalam KMZ.")
+
 
