@@ -2,6 +2,7 @@ import streamlit as st
 import zipfile
 import os
 import tempfile
+import shutil
 import xml.etree.ElementTree as ET
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -47,6 +48,7 @@ def get_drive_service():
     )
 
     query_params = st.query_params
+
     if "code" in query_params:
         code = query_params["code"]
         flow.fetch_token(code=code)
@@ -59,80 +61,58 @@ def get_drive_service():
     st.markdown(f"[🔐 Klik untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
     st.stop()
 
-def parse_kml_and_get_placemarks(kml_path, target_folder_name):
-    """Cari semua Placemark dari folder logis yang namanya mengandung target_folder_name."""
-    namespace = {"kml": "http://www.opengis.net/kml/2.2"}
-    all_placemarks = []
-
-    try:
-        tree = ET.parse(kml_path)
-        root_elem = tree.getroot()
-    except ET.ParseError:
-        st.error(f"❌ Gagal parsing file: {kml_path}")
-        return []
-
-    for folder in root_elem.findall(".//kml:Folder", namespace):
-        name_elem = folder.find("kml:name", namespace)
-        if name_elem is not None and target_folder_name.lower() in name_elem.text.strip().lower():
-            placemarks = folder.findall(".//kml:Placemark", namespace)
-            all_placemarks.extend(placemarks)
-
-    return all_placemarks
-
-def extract_and_merge_kmls_from_file(uploaded_file, target_folder_name, output_name):
-    """Ekstrak dari KMZ/KML, ambil folder logis target, dan gabungkan ke 1 file KML."""
+def extract_folder_as_kml(kmz_file, target_folder_name, output_name):
     with tempfile.TemporaryDirectory() as tmpdirname:
-        file_path = os.path.join(tmpdirname, uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.read())
+        kmz_path = os.path.join(tmpdirname, kmz_file.name)
+        with open(kmz_path, "wb") as f:
+            f.write(kmz_file.read())
 
-        extracted_kml_path = None
-
-        # Jika KMZ
-        if uploaded_file.name.lower().endswith(".kmz"):
-            try:
-                with zipfile.ZipFile(file_path, 'r') as z:
-                    if "doc.kml" in z.namelist():
-                        z.extract("doc.kml", tmpdirname)
-                        extracted_kml_path = os.path.join(tmpdirname, "doc.kml")
-                    else:
-                        # Ambil semua .kml yang ada
-                        for name in z.namelist():
-                            if name.lower().endswith(".kml"):
-                                z.extract(name, tmpdirname)
-                                extracted_kml_path = os.path.join(tmpdirname, name)
-                                break
-            except zipfile.BadZipFile:
-                st.error("❌ File KMZ bukan file zip yang valid.")
-                return None
-
-        # Jika langsung KML
-        elif uploaded_file.name.lower().endswith(".kml"):
-            extracted_kml_path = file_path
-
-        if not extracted_kml_path or not os.path.exists(extracted_kml_path):
-            st.error("❌ Tidak ditemukan file KML untuk diproses.")
+        try:
+            with zipfile.ZipFile(kmz_path, 'r') as z:
+                z.extractall(tmpdirname)
+        except zipfile.BadZipFile:
+            st.error("❌ File KMZ bukan file zip yang valid.")
             return None
 
-        all_placemarks = parse_kml_and_get_placemarks(extracted_kml_path, target_folder_name)
-
-        if not all_placemarks:
+        doc_kml_path = os.path.join(tmpdirname, "doc.kml")
+        if not os.path.exists(doc_kml_path):
+            st.error("❌ Tidak ditemukan doc.kml di dalam KMZ.")
             return None
 
-        # Buat file KML gabungan
-        kml_root = ET.Element("{http://www.opengis.net/kml/2.2}kml")
-        doc_elem = ET.SubElement(kml_root, "Document")
-        ET.SubElement(doc_elem, "name").text = output_name
+        # Parsing KML
+        tree = ET.parse(doc_kml_path)
+        root = tree.getroot()
+        ns = {"kml": "http://www.opengis.net/kml/2.2"}
 
-        for pm in all_placemarks:
-            doc_elem.append(pm)
+        # Cari folder target
+        target_folders = []
+        for folder in root.findall(".//kml:Folder", ns):
+            name_tag = folder.find("kml:name", ns)
+            if name_tag is not None and name_tag.text and target_folder_name.lower() in name_tag.text.lower():
+                target_folders.append(folder)
 
+        if not target_folders:
+            return None
+
+        # Buat KML baru dengan struktur asli, tapi hanya folder target
+        new_kml = ET.Element(root.tag, root.attrib)
+        for child in root:
+            if child.tag.endswith("Document"):
+                new_doc = ET.SubElement(new_kml, child.tag, child.attrib)
+                # Copy style & schema dari doc asli
+                for doc_child in child:
+                    if not doc_child.tag.endswith("Folder"):
+                        new_doc.append(doc_child)
+                # Masukkan folder target
+                for folder in target_folders:
+                    new_doc.append(folder)
+
+        # Simpan ke file
         combined_path = os.path.join(tempfile.gettempdir(), output_name)
-        ET.ElementTree(kml_root).write(combined_path, encoding="utf-8", xml_declaration=True)
-
+        ET.ElementTree(new_kml).write(combined_path, encoding="utf-8", xml_declaration=True)
         return combined_path
 
-def upload_kml_to_drive(kml_path, filename, folder_id):
+def upload_kml_to_drive(kml_path, filename, folder_ids):
     if not os.path.exists(kml_path):
         st.error(f"❌ File tidak ditemukan: {kml_path}")
         return
@@ -143,13 +123,14 @@ def upload_kml_to_drive(kml_path, filename, folder_id):
             st.error("❌ Gagal mendapatkan layanan Google Drive.")
             return
 
-        file_metadata = {
-            'name': filename,
-            'parents': [folder_id]
-        }
-        media = MediaFileUpload(kml_path, mimetype='application/vnd.google-earth.kml+xml')
-        service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        st.success(f"✅ File '{filename}' berhasil diupload ke folder ID: {folder_id}")
+        for folder_id in folder_ids:
+            file_metadata = {
+                'name': filename,
+                'parents': [folder_id]
+            }
+            media = MediaFileUpload(kml_path, mimetype='application/vnd.google-earth.kml+xml')
+            uploaded = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            st.success(f"✅ File '{filename}' berhasil diupload ke folder ID: {folder_id}")
 
     except HttpError as error:
         st.error("❌ Terjadi kesalahan saat mengunggah ke Google Drive.")
@@ -159,32 +140,27 @@ def upload_kml_to_drive(kml_path, filename, folder_id):
         st.exception(e)
 
 # UI Streamlit
-st.title("📤 Upload KMZ/KML ke Google Drive")
+st.title("📤 Upload KMZ ke Google Drive")
 
-uploaded_cluster = st.file_uploader("📄 Upload file CLUSTER (.KMZ / .KML)", type=["kmz", "kml"], key="cluster")
-uploaded_subfeeder = st.file_uploader("📄 Upload file SUBFEEDER (.KMZ / .KML)", type=["kmz", "kml"], key="subfeeder")
+uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi folder DISTRIBUTION CABLE & BOUNDARY CLUSTER)", type=["kmz"], key="cluster")
+uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi folder CABLE)", type=["kmz"], key="subfeeder")
 submit_clicked = st.button("🚀 Upload ke Google Drive")
 
 if submit_clicked:
-    base_cluster_name = uploaded_cluster.name.rsplit(".", 1)[0] if uploaded_cluster else None
-    base_subfeeder_name = uploaded_subfeeder.name.rsplit(".", 1)[0] if uploaded_subfeeder else None
+    base_cluster_name = uploaded_cluster.name.replace(".kmz", "") if uploaded_cluster else None
+    base_subfeeder_name = uploaded_subfeeder.name.replace(".kmz", "") if uploaded_subfeeder else None
 
-    # Proses CLUSTER
     if uploaded_cluster:
         for folder_name in ["DISTRIBUTION CABLE", "BOUNDARY CLUSTER"]:
-            output_filename = f"{base_cluster_name}_{folder_name.replace(' ', '_')}.kml"
-            kml_path = extract_and_merge_kmls_from_file(uploaded_cluster, folder_name, output_filename)
+            kml_path = extract_folder_as_kml(uploaded_cluster, folder_name, f"{base_cluster_name}_{folder_name.replace(' ', '_')}.kml")
             if kml_path:
-                upload_kml_to_drive(kml_path, output_filename, GDRIVE_FOLDERS[folder_name])
+                upload_kml_to_drive(kml_path, f"{base_cluster_name}_{folder_name.replace(' ', '_')}.kml", [GDRIVE_FOLDERS[folder_name]])
             else:
-                st.error(f"❌ Tidak ditemukan <Placemark> di folder '{folder_name}'.")
+                st.error(f"❌ Tidak ditemukan folder {folder_name} di dalam KMZ.")
 
-    # Proses SUBFEEDER
     if uploaded_subfeeder:
-        folder_name = "CABLE"
-        output_filename = f"{base_subfeeder_name}_{folder_name}.kml"
-        kml_path = extract_and_merge_kmls_from_file(uploaded_subfeeder, folder_name, output_filename)
-        if kml_path:
-            upload_kml_to_drive(kml_path, output_filename, GDRIVE_FOLDERS[folder_name])
+        kml_cable = extract_folder_as_kml(uploaded_subfeeder, "CABLE", f"{base_subfeeder_name}_CABLE.kml")
+        if kml_cable:
+            upload_kml_to_drive(kml_cable, f"{base_subfeeder_name}_CABLE.kml", [GDRIVE_FOLDERS["CABLE"]])
         else:
-            st.error(f"❌ Tidak ditemukan <Placemark> di folder '{folder_name}'.")
+            st.error("❌ Tidak ditemukan folder CABLE di dalam KMZ.")
