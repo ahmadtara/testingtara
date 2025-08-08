@@ -41,6 +41,7 @@ def get_drive_service():
     if creds:
         return build('drive', 'v3', credentials=creds)
 
+    # OAuth alur
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRET_FILE,
         scopes=SCOPES,
@@ -50,15 +51,21 @@ def get_drive_service():
     query_params = st.query_params
 
     if "code" in query_params:
-        code = query_params["code"]
-        flow.fetch_token(code=code)
-        creds = flow.credentials
-        save_token(creds)
-        st.success("✅ Autentikasi berhasil! Silakan klik ulang tombol upload.")
-        st.rerun()
+        try:
+            code = query_params["code"]
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            save_token(creds)
+            st.success("✅ Autentikasi berhasil! Anda sekarang dapat mengupload file.")
+            st.experimental_rerun()
+        except Exception as e:
+            st.error("❌ Gagal mendapatkan token autentikasi.")
+            st.exception(e)
+            st.stop()
 
     auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', include_granted_scopes='true')
-    st.markdown(f"[🔐 Klik untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
+    st.warning("🔐 Anda perlu login terlebih dahulu dengan akun Google Anda.")
+    st.markdown(f"[👉 Klik di sini untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
     st.stop()
 
 def convert_kmz_to_kml(kmz_file, output_name):
