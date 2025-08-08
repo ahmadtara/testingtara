@@ -201,7 +201,14 @@ def upload_kml_to_drive(kml_path, filename, folder_ids):
             }
             media = MediaFileUpload(kml_path, mimetype='application/vnd.google-earth.kml+xml')
             uploaded = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-            st.success(f"✅ File '{filename}' berhasil diupload ke folder ID: {folder_id}")
+            # Buat link yang bisa diklik
+            link = f"https://drive.google.com/drive/folders/{folder_id}"
+            st.markdown(
+                f"✅ File **`{filename}`** berhasil diupload.<br>"
+                f"🔗 <a href='{link}' target='_blank'>Klik di sini untuk buka folder Google Drive</a>",
+                unsafe_allow_html=True
+            )
+
 
     except HttpError as error:
         st.error("❌ Terjadi kesalahan saat mengunggah ke Google Drive.")
@@ -235,5 +242,6 @@ if submit_clicked:
             upload_kml_to_drive(kml_cable, f"{base_subfeeder_name}_CABLE.kml", [GDRIVE_FOLDERS["CABLE"]])
         else:
             st.error("❌ Tidak ditemukan folder CABLE di dalam KMZ.")
+
 
 
