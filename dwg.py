@@ -51,7 +51,7 @@ def get_drive_service():
             flow = Flow.from_client_secrets_file(
                 "credentials.json",
                 scopes=SCOPES,
-                redirect_uri="urn:ietf:wg:oauth:2.0:oob"
+                redirect_uri="https://tara-capslock.streamlit.app/"
             )
 
             auth_url, _ = flow.authorization_url(prompt='consent')
@@ -138,3 +138,4 @@ if submit_clicked:
             upload_kml_to_drive(kml_path, new_filename, [
                 GDRIVE_FOLDERS["CABLE"]
             ])
+
