@@ -10,7 +10,6 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
-from geopy.distance import distance as dist
 
 # SCOPES dan file kredensial
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -77,7 +76,7 @@ def extract_and_merge_kmls_from_kmz(kmz_file, target_folder_name, output_name):
 
         kml_paths = []
         for root, dirs, files in os.walk(tmpdirname):
-            if target_folder_name.lower() in root.lower():
+            if target_folder_name.lower() in os.path.basename(root).lower():
                 for file in files:
                     if file.endswith(".kml"):
                         kml_paths.append(os.path.join(root, file))
@@ -106,60 +105,6 @@ def extract_and_merge_kmls_from_kmz(kmz_file, target_folder_name, output_name):
             outfile.write("</Document>\n</kml>")
 
         return combined_path
-
-def extract_points_from_kmz(kmz_path):
-    fat_points, poles, poles_subfeeder = [], [], []
-
-    def recurse_folder(folder, ns, path=""):
-        items = []
-        name_el = folder.find("kml:name", ns)
-        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
-        new_path = f"{path}/{folder_name}" if path else folder_name
-        for sub in folder.findall("kml:Folder", ns):
-            items += recurse_folder(sub, ns, new_path)
-        for pm in folder.findall("kml:Placemark", ns):
-            nm = pm.find("kml:name", ns)
-            coord = pm.find(".//kml:coordinates", ns)
-            if nm is not None and coord is not None and ',' in coord.text:
-                lon, lat = coord.text.strip().split(",")[:2]
-                items.append({"name": nm.text.strip(), "lat": float(lat), "lon": float(lon), "path": new_path})
-        return items
-
-    with zipfile.ZipFile(kmz_path, 'r') as zf:
-        kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
-        if not kml_file:
-            st.error("❌ Tidak ditemukan file .kml dalam .kmz")
-            return [], [], []
-
-        root = ET.parse(zf.open(kml_file)).getroot()
-        ns = {"kml": "http://www.opengis.net/kml/2.2"}
-        all_pm = []
-        for folder in root.findall(".//kml:Folder", ns):
-            all_pm += recurse_folder(folder, ns)
-
-    for p in all_pm:
-        base_folder = p["path"].split("/")[0].upper()
-        if base_folder == "FAT":
-            fat_points.append(p)
-        elif base_folder == "NEW POLE 7-3":
-            poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
-            poles_subfeeder.append({**p, "folder": "7m3inch", "height": "7"})
-        elif base_folder == "NEW POLE 7-4":
-            poles.append({**p, "folder": "7m4inch", "height": "7"})
-        elif base_folder == "NEW POLE 9-4":
-            poles.append({**p, "folder": "9m4inch", "height": "9"})
-
-    return fat_points, poles, poles_subfeeder
-
-def find_nearest_pole(fat_point, poles):
-    min_dist = float('inf')
-    nearest_name = ""
-    for pole in poles:
-        d = dist([fat_point['lat'], fat_point['lon']], [pole['lat'], pole['lon']])
-        if d < min_dist:
-            min_dist = d
-            nearest_name = pole['name']
-    return nearest_name
 
 def upload_kml_to_drive(kml_path, filename, folder_ids):
     if not os.path.exists(kml_path):
@@ -191,8 +136,8 @@ def upload_kml_to_drive(kml_path, filename, folder_ids):
 # UI Streamlit
 st.title("📤 Upload KMZ ke Google Drive")
 
-uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"], key="cluster")
-uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"], key="subfeeder")
+uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi folder DISTRIBUTION CABLE & BOUNDARY CLUSTER)", type=["kmz"], key="cluster")
+uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi folder CABLE)", type=["kmz"], key="subfeeder")
 submit_clicked = st.button("🚀 Upload ke Google Drive")
 
 if submit_clicked:
@@ -200,30 +145,16 @@ if submit_clicked:
     base_subfeeder_name = uploaded_subfeeder.name.replace(".kmz", "") if uploaded_subfeeder else None
 
     if uploaded_cluster:
-        kml_dc = extract_and_merge_kmls_from_kmz(uploaded_cluster, "DISTRIBUTION CABLE", base_cluster_name + "_DC.kml")
-        if kml_dc:
-            upload_kml_to_drive(kml_dc, base_cluster_name + ".kml", [GDRIVE_FOLDERS["DISTRIBUTION CABLE"]])
-        else:
-            st.error("❌ Tidak ditemukan file .kml dalam folder DISTRIBUTION CABLE.")
-
-        kml_bc = extract_and_merge_kmls_from_kmz(uploaded_cluster, "BOUNDARY CLUSTER", base_cluster_name + "_BC.kml")
-        if kml_bc:
-            upload_kml_to_drive(kml_bc, base_cluster_name + ".kml", [GDRIVE_FOLDERS["BOUNDARY CLUSTER"]])
-        else:
-            st.error("❌ Tidak ditemukan file .kml dalam folder BOUNDARY CLUSTER.")
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp_kmz:
-            tmp_kmz.write(uploaded_cluster.getbuffer())
-            tmp_kmz_path = tmp_kmz.name
-            fat_points, poles, poles_subfeeder = extract_points_from_kmz(tmp_kmz_path)
-            if fat_points:
-                st.success(f"✅ Ditemukan {len(fat_points)} titik FAT")
+        for folder_name in ["DISTRIBUTION CABLE", "BOUNDARY CLUSTER"]:
+            kml_path = extract_and_merge_kmls_from_kmz(uploaded_cluster, folder_name, f"{base_cluster_name}_{folder_name.replace(' ', '_')}.kml")
+            if kml_path:
+                upload_kml_to_drive(kml_path, f"{base_cluster_name}_{folder_name.replace(' ', '_')}.kml", [GDRIVE_FOLDERS[folder_name]])
             else:
-                st.warning("⚠️ Tidak ditemukan titik FAT.")
+                st.error(f"❌ Tidak ditemukan file .kml dalam folder {folder_name}.")
 
     if uploaded_subfeeder:
-        kml_cable = extract_and_merge_kmls_from_kmz(uploaded_subfeeder, "CABLE", base_subfeeder_name + "_CABLE.kml")
+        kml_cable = extract_and_merge_kmls_from_kmz(uploaded_subfeeder, "CABLE", f"{base_subfeeder_name}_CABLE.kml")
         if kml_cable:
-            upload_kml_to_drive(kml_cable, base_subfeeder_name + ".kml", [GDRIVE_FOLDERS["CABLE"]])
+            upload_kml_to_drive(kml_cable, f"{base_subfeeder_name}_CABLE.kml", [GDRIVE_FOLDERS["CABLE"]])
         else:
             st.error("❌ Tidak ditemukan file .kml dalam folder CABLE.")
