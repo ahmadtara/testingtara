@@ -8,9 +8,11 @@ from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
+# Konfigurasi halaman
 st.set_page_config(page_title="Uploader FAT Splitter", layout="centered")
 st.title("📡 Uploader FAT Splitter")
 
+# File upload
 uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
 uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
 submit_clicked = st.button("🚀 Upload ke Google Drive")
@@ -24,7 +26,7 @@ GDRIVE_FOLDERS = {
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
-# Menyimpan kredensial antar sesi
+# Simpan kredensial antar sesi
 if "creds" not in st.session_state:
     st.session_state.creds = None
 
@@ -32,48 +34,46 @@ if "creds" not in st.session_state:
 def get_drive_service():
     creds = None
 
-    # Cek apakah sudah ada token.json
+    # 1. Coba load token.json dari local
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
-    # Jika belum ada token atau token tidak valid
+    # 2. Cek jika token tidak valid, refresh jika bisa
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            with open("token.json", "w") as token_file:
+                token_file.write(creds.to_json())
+            st.success("🔄 Token diperbarui.")
+        except Exception as e:
+            st.error(f"❌ Gagal refresh token: {e}")
+            creds = None
+
+    # 3. Jika belum login sama sekali, minta login
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+        flow = Flow.from_client_secrets_file(
+            "credentials.json",
+            scopes=SCOPES,
+            redirect_uri="https://tara-capslock.streamlit.app/"
+        )
+
+        auth_url, _ = flow.authorization_url(prompt='consent')
+
+        st.markdown(f"🔐 [Klik untuk login dengan Google (buka tab baru)]({auth_url})", unsafe_allow_html=True)
+        auth_code = st.text_input("📥 Masukkan kode otentikasi dari Google di sini:", key="auth_code_input")
+
+        if auth_code:
             try:
-                creds.refresh(Request())
+                flow.fetch_token(code=auth_code)
+                creds = flow.credentials
                 with open("token.json", "w") as token_file:
                     token_file.write(creds.to_json())
-                st.success("🔁 Token diperbarui otomatis.")
+                st.success("✅ Login berhasil! Token disimpan.")
             except Exception as e:
-                st.error(f"Gagal refresh token: {e}")
+                st.error(f"❌ Gagal login: {e}")
                 return None
-        else:
-            flow = Flow.from_client_secrets_file(
-                "credentials.json",
-                scopes=SCOPES,
-                redirect_uri="https://tara-capslock.streamlit.app/"
-            )
 
-            auth_url, _ = flow.authorization_url(prompt='consent')
-
-            st.markdown(
-                f"🔐 [Klik di sini untuk login Google (buka di tab baru)]({auth_url}){{:target=\"_blank\"}}",
-                unsafe_allow_html=True
-            )
-            auth_code = st.text_input("📥 Masukkan kode otentikasi dari Google di sini:")
-
-            if auth_code:
-                try:
-                    flow.fetch_token(code=auth_code)
-                    creds = flow.credentials
-                    with open("token.json", "w") as token_file:
-                        token_file.write(creds.to_json())
-                    st.success("✅ Login berhasil! Token disimpan ke token.json")
-                    st.session_state.creds = creds
-                except Exception as e:
-                    st.error(f"❌ Gagal login: {e}")
-                    return None
-
+    # Simpan ke session state
     if creds:
         st.session_state.creds = creds
         return build("drive", "v3", credentials=creds)
@@ -98,7 +98,12 @@ def extract_kml_from_kmz(kmz_file):
 
 
 def upload_kml_to_drive(kml_path, new_filename, folder_ids):
-    service = get_drive_service()
+    # Pastikan hanya satu kali login
+    if not st.session_state.creds:
+        service = get_drive_service()
+    else:
+        service = build("drive", "v3", credentials=st.session_state.creds)
+
     if not service:
         st.warning("⚠️ Silakan login terlebih dahulu sebelum upload.")
         return
@@ -120,7 +125,7 @@ def upload_kml_to_drive(kml_path, new_filename, folder_ids):
             st.error(f"❌ Gagal upload ke folder ID: {folder_id}\n{e}")
 
 
-# Jalankan upload jika tombol ditekan
+# Proses utama saat tombol ditekan
 if submit_clicked:
     if uploaded_cluster:
         st.info("📤 Memproses file KMZ Cluster...")
@@ -138,4 +143,3 @@ if submit_clicked:
             upload_kml_to_drive(kml_path, new_filename, [
                 GDRIVE_FOLDERS["CABLE"]
             ])
-
