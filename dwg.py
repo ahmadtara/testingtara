@@ -2,6 +2,7 @@ import streamlit as st
 import zipfile
 import os
 import tempfile
+import shutil
 import xml.etree.ElementTree as ET
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -37,8 +38,7 @@ def load_token():
 def get_drive_service():
     creds = load_token()
     if creds:
-        service = build('drive', 'v3', credentials=creds)
-        return service
+        return build('drive', 'v3', credentials=creds)
 
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRET_FILE,
@@ -53,7 +53,6 @@ def get_drive_service():
         flow.fetch_token(code=code)
         creds = flow.credentials
         save_token(creds)
-        st.experimental_set_query_params()
         st.success("✅ Autentikasi berhasil! Silakan klik ulang tombol upload.")
         st.rerun()
 
@@ -71,10 +70,17 @@ def convert_kmz_to_kml(kmz_file, output_name):
             for root, dirs, files in os.walk(tmpdirname):
                 for file in files:
                     if file.endswith(".kml"):
-                        return os.path.join(root, file)
+                        extracted_path = os.path.join(root, file)
+                        final_path = os.path.join(tempfile.gettempdir(), output_name)
+                        shutil.copy2(extracted_path, final_path)
+                        return final_path
     return None
 
 def upload_kml_to_drive(kml_path, filename, folder_ids):
+    if not os.path.exists(kml_path):
+        st.error(f"❌ File tidak ditemukan: {kml_path}")
+        return
+
     service = get_drive_service()
     for folder_id in folder_ids:
         file_metadata = {
