@@ -3,7 +3,6 @@ import zipfile
 import os
 import tempfile
 import shutil
-import xml.etree.ElementTree as ET
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
@@ -41,7 +40,6 @@ def get_drive_service():
     if creds:
         return build('drive', 'v3', credentials=creds)
 
-    # OAuth alur
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRET_FILE,
         scopes=SCOPES,
@@ -51,38 +49,57 @@ def get_drive_service():
     query_params = st.query_params
 
     if "code" in query_params:
-        try:
-            code = query_params["code"]
-            flow.fetch_token(code=code)
-            creds = flow.credentials
-            save_token(creds)
-            st.success("✅ Autentikasi berhasil! Anda sekarang dapat mengupload file.")
-            st.experimental_rerun()
-        except Exception as e:
-            st.error("❌ Gagal mendapatkan token autentikasi.")
-            st.exception(e)
-            st.stop()
+        code = query_params["code"]
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        save_token(creds)
+        st.success("✅ Autentikasi berhasil! Silakan klik ulang tombol upload.")
+        st.rerun()
 
     auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', include_granted_scopes='true')
-    st.warning("🔐 Anda perlu login terlebih dahulu dengan akun Google Anda.")
-    st.markdown(f"[👉 Klik di sini untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
+    st.markdown(f"[🔐 Klik untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
     st.stop()
 
-def convert_kmz_to_kml(kmz_file, output_name):
+def extract_and_merge_kmls_from_kmz(kmz_file, target_folder_name, output_name):
     with tempfile.TemporaryDirectory() as tmpdirname:
         kmz_path = os.path.join(tmpdirname, kmz_file.name)
         with open(kmz_path, "wb") as f:
             f.write(kmz_file.read())
+
         with zipfile.ZipFile(kmz_path, 'r') as z:
             z.extractall(tmpdirname)
-            for root, dirs, files in os.walk(tmpdirname):
+
+        kml_paths = []
+        for root, dirs, files in os.walk(tmpdirname):
+            if target_folder_name.lower() in root.lower():
                 for file in files:
                     if file.endswith(".kml"):
-                        extracted_path = os.path.join(root, file)
-                        final_path = os.path.join(tempfile.gettempdir(), output_name)
-                        shutil.copy2(extracted_path, final_path)
-                        return final_path
-    return None
+                        kml_paths.append(os.path.join(root, file))
+
+        if not kml_paths:
+            return None
+
+        combined_path = os.path.join(tempfile.gettempdir(), output_name)
+        with open(combined_path, "w", encoding="utf-8") as outfile:
+            for i, path in enumerate(kml_paths):
+                with open(path, "r", encoding="utf-8") as infile:
+                    content = infile.read()
+                    if i == 0:
+                        outfile.write(content)
+                    else:
+                        placemarks = []
+                        inside = False
+                        for line in content.splitlines():
+                            if "<Placemark" in line:
+                                inside = True
+                            if inside:
+                                placemarks.append(line)
+                            if "</Placemark>" in line:
+                                inside = False
+                        outfile.write("\n".join(placemarks) + "\n")
+            outfile.write("</Document>\n</kml>")
+
+        return combined_path
 
 def upload_kml_to_drive(kml_path, filename, folder_ids):
     if not os.path.exists(kml_path):
@@ -119,23 +136,25 @@ uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi N
 submit_clicked = st.button("🚀 Upload ke Google Drive")
 
 if submit_clicked:
+    base_cluster_name = uploaded_cluster.name.replace(".kmz", "") if uploaded_cluster else None
+    base_subfeeder_name = uploaded_subfeeder.name.replace(".kmz", "") if uploaded_subfeeder else None
+
     if uploaded_cluster:
-        new_filename = uploaded_cluster.name.replace(".kmz", ".kml")
-        kml_path = convert_kmz_to_kml(uploaded_cluster, new_filename)
-        if kml_path:
-            upload_kml_to_drive(kml_path, new_filename, [
-                GDRIVE_FOLDERS["DISTRIBUTION CABLE"],
-                GDRIVE_FOLDERS["BOUNDARY CLUSTER"]
-            ])
+        kml_dc = extract_and_merge_kmls_from_kmz(uploaded_cluster, "DISTRIBUTION CABLE", base_cluster_name + "_DC.kml")
+        if kml_dc:
+            upload_kml_to_drive(kml_dc, base_cluster_name + ".kml", [GDRIVE_FOLDERS["DISTRIBUTION CABLE"]])
         else:
-            st.error("❌ Gagal mengonversi KMZ CLUSTER ke KML.")
+            st.error("❌ Tidak ditemukan file .kml dalam folder DISTRIBUTION CABLE.")
+
+        kml_bc = extract_and_merge_kmls_from_kmz(uploaded_cluster, "BOUNDARY CLUSTER", base_cluster_name + "_BC.kml")
+        if kml_bc:
+            upload_kml_to_drive(kml_bc, base_cluster_name + ".kml", [GDRIVE_FOLDERS["BOUNDARY CLUSTER"]])
+        else:
+            st.error("❌ Tidak ditemukan file .kml dalam folder BOUNDARY CLUSTER.")
 
     if uploaded_subfeeder:
-        new_filename = uploaded_subfeeder.name.replace(".kmz", ".kml")
-        kml_path = convert_kmz_to_kml(uploaded_subfeeder, new_filename)
-        if kml_path:
-            upload_kml_to_drive(kml_path, new_filename, [
-                GDRIVE_FOLDERS["CABLE"]
-            ])
+        kml_cable = extract_and_merge_kmls_from_kmz(uploaded_subfeeder, "CABLE", base_subfeeder_name + "_CABLE.kml")
+        if kml_cable:
+            upload_kml_to_drive(kml_cable, base_subfeeder_name + ".kml", [GDRIVE_FOLDERS["CABLE"]])
         else:
-            st.error("❌ Gagal mengonversi KMZ SUBFEEDER ke KML.")
+            st.error("❌ Tidak ditemukan file .kml dalam folder CABLE.")
