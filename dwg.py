@@ -9,6 +9,7 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from googleapiclient.errors import HttpError
 
 # SCOPES dan file kredensial
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -81,15 +82,27 @@ def upload_kml_to_drive(kml_path, filename, folder_ids):
         st.error(f"❌ File tidak ditemukan: {kml_path}")
         return
 
-    service = get_drive_service()
-    for folder_id in folder_ids:
-        file_metadata = {
-            'name': filename,
-            'parents': [folder_id]
-        }
-        media = MediaFileUpload(kml_path, mimetype='application/vnd.google-earth.kml+xml')
-        uploaded = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        st.success(f"✅ File '{filename}' berhasil diupload ke folder ID: {folder_id}")
+    try:
+        service = get_drive_service()
+        if not service:
+            st.error("❌ Gagal mendapatkan layanan Google Drive.")
+            return
+
+        for folder_id in folder_ids:
+            file_metadata = {
+                'name': filename,
+                'parents': [folder_id]
+            }
+            media = MediaFileUpload(kml_path, mimetype='application/vnd.google-earth.kml+xml')
+            uploaded = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            st.success(f"✅ File '{filename}' berhasil diupload ke folder ID: {folder_id}")
+
+    except HttpError as error:
+        st.error("❌ Terjadi kesalahan saat mengunggah ke Google Drive.")
+        st.exception(error)
+    except Exception as e:
+        st.error("❌ Terjadi kesalahan tak terduga.")
+        st.exception(e)
 
 # UI Streamlit
 st.title("📤 Upload KMZ ke Google Drive")
