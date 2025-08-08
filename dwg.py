@@ -36,25 +36,30 @@ def load_token():
 
 def get_drive_service():
     creds = load_token()
-    if not creds:
-        flow = Flow.from_client_secrets_file(
-            CLIENT_SECRET_FILE,
-            scopes=SCOPES,
-            redirect_uri='urn:ietf:wg:oauth:2.0:oob'
-        )
-        auth_url, _ = flow.authorization_url(prompt='consent')
-        st.markdown(f"[🔐 Klik untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
-        auth_code_input = st.empty()
-        auth_code = auth_code_input.text_input("📥 Masukkan kode otentikasi dari Google di sini:", key=f"auth_code_input_{st.session_state.get('auth_code_attempt', 0)}")
-        if auth_code:
-            flow.fetch_token(code=auth_code)
-            creds = flow.credentials
-            save_token(creds)
-            st.success("✅ Autentikasi berhasil. Silakan lanjutkan.")
-            st.rerun()
-        st.stop()
-    service = build('drive', 'v3', credentials=creds)
-    return service
+    if creds:
+        service = build('drive', 'v3', credentials=creds)
+        return service
+
+    flow = Flow.from_client_secrets_file(
+        CLIENT_SECRET_FILE,
+        scopes=SCOPES,
+        redirect_uri="https://tara-capslock.streamlit.app/"
+    )
+
+    query_params = st.query_params
+
+    if "code" in query_params:
+        code = query_params["code"]
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        save_token(creds)
+        st.success("✅ Autentikasi berhasil! Silakan klik ulang tombol upload.")
+        st.experimental_set_query_params()
+        st.rerun()
+
+    auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', include_granted_scopes='true')
+    st.markdown(f"[🔐 Klik untuk login dengan Google]({auth_url})", unsafe_allow_html=True)
+    st.stop()
 
 def convert_kmz_to_kml(kmz_file, output_name):
     with tempfile.TemporaryDirectory() as tmpdirname:
