@@ -24,26 +24,30 @@ GDRIVE_FOLDERS = {
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
-# Simpan kredensial antar sesi
+# Menyimpan kredensial antar sesi
 if "creds" not in st.session_state:
     st.session_state.creds = None
+
 
 def get_drive_service():
     creds = None
 
-    # Load dari token.json
+    # Cek apakah sudah ada token.json
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
-    # Token tidak valid atau belum login
+    # Jika belum ada token atau token tidak valid
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open("token.json", "w") as token_file:
-                token_file.write(creds.to_json())
-            st.success("🔄 Token diperbarui dan disimpan ke token.json")
+            try:
+                creds.refresh(Request())
+                with open("token.json", "w") as token_file:
+                    token_file.write(creds.to_json())
+                st.success("🔁 Token diperbarui otomatis.")
+            except Exception as e:
+                st.error(f"Gagal refresh token: {e}")
+                return None
         else:
-            # Flow manual untuk login user
             flow = Flow.from_client_secrets_file(
                 "credentials.json",
                 scopes=SCOPES,
@@ -52,8 +56,11 @@ def get_drive_service():
 
             auth_url, _ = flow.authorization_url(prompt='consent')
 
-            st.markdown(f"🔐 [Klik di sini untuk login Google (tab baru)]({auth_url}){{:target=\"_blank\"}}", unsafe_allow_html=True)
-            auth_code = st.text_input("📥 Masukkan kode otentikasi di sini:")
+            st.markdown(
+                f"🔐 [Klik di sini untuk login Google (buka di tab baru)]({auth_url}){{:target=\"_blank\"}}",
+                unsafe_allow_html=True
+            )
+            auth_code = st.text_input("📥 Masukkan kode otentikasi dari Google di sini:")
 
             if auth_code:
                 try:
@@ -61,7 +68,7 @@ def get_drive_service():
                     creds = flow.credentials
                     with open("token.json", "w") as token_file:
                         token_file.write(creds.to_json())
-                    st.success("✅ Login berhasil! Token disimpan.")
+                    st.success("✅ Login berhasil! Token disimpan ke token.json")
                     st.session_state.creds = creds
                 except Exception as e:
                     st.error(f"❌ Gagal login: {e}")
@@ -72,6 +79,7 @@ def get_drive_service():
         return build("drive", "v3", credentials=creds)
 
     return None
+
 
 def extract_kml_from_kmz(kmz_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp_kmz:
@@ -87,6 +95,7 @@ def extract_kml_from_kmz(kmz_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".kml") as tmp_kml:
             tmp_kml.write(zf.read(kml_filename))
             return tmp_kml.name, os.path.splitext(os.path.basename(kmz_path))[0] + ".kml"
+
 
 def upload_kml_to_drive(kml_path, new_filename, folder_ids):
     service = get_drive_service()
@@ -110,7 +119,8 @@ def upload_kml_to_drive(kml_path, new_filename, folder_ids):
         except Exception as e:
             st.error(f"❌ Gagal upload ke folder ID: {folder_id}\n{e}")
 
-# Proses upload jika tombol ditekan
+
+# Jalankan upload jika tombol ditekan
 if submit_clicked:
     if uploaded_cluster:
         st.info("📤 Memproses file KMZ Cluster...")
