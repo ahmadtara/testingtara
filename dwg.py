@@ -61,8 +61,8 @@ def get_drive_service():
 
 def extract_and_merge_kmls_from_kmz(kmz_file, target_folder_name, output_name):
     """
-    Ekstrak semua file .kml dalam folder target dari KMZ,
-    gabungkan semua Placemark, dan simpan ke satu file .kml.
+    Ekstrak semua Placemark dari folder logis dalam doc.kml yang namanya target_folder_name.
+    Gabungkan ke satu file .kml.
     """
     with tempfile.TemporaryDirectory() as tmpdirname:
         kmz_path = os.path.join(tmpdirname, kmz_file.name)
@@ -71,27 +71,34 @@ def extract_and_merge_kmls_from_kmz(kmz_file, target_folder_name, output_name):
 
         try:
             with zipfile.ZipFile(kmz_path, 'r') as z:
-                z.extractall(tmpdirname)
+                # Pastikan doc.kml ada
+                if "doc.kml" not in z.namelist():
+                    st.error("❌ File KMZ tidak mengandung doc.kml.")
+                    return None
+                z.extract("doc.kml", tmpdirname)
         except zipfile.BadZipFile:
             st.error("❌ File KMZ bukan file zip yang valid.")
             return None
 
-        all_placemarks = []
+        # Parse doc.kml
+        doc_kml_path = os.path.join(tmpdirname, "doc.kml")
         namespace = {"kml": "http://www.opengis.net/kml/2.2"}
 
-        # Cari semua file .kml di folder target
-        for root, dirs, files in os.walk(tmpdirname):
-            if target_folder_name.lower() in root.lower():
-                for file in files:
-                    if file.endswith(".kml"):
-                        kml_path = os.path.join(root, file)
-                        try:
-                            tree = ET.parse(kml_path)
-                            root_elem = tree.getroot()
-                            for placemark in root_elem.findall(".//kml:Placemark", namespace):
-                                all_placemarks.append(placemark)
-                        except ET.ParseError:
-                            st.warning(f"⚠ Gagal parsing XML: {file}")
+        try:
+            tree = ET.parse(doc_kml_path)
+            root_elem = tree.getroot()
+        except ET.ParseError:
+            st.error("❌ Gagal parsing doc.kml.")
+            return None
+
+        all_placemarks = []
+
+        # Cari folder target
+        for folder in root_elem.findall(".//kml:Folder", namespace):
+            name_elem = folder.find("kml:name", namespace)
+            if name_elem is not None and name_elem.text.strip().lower() == target_folder_name.lower():
+                placemarks = folder.findall(".//kml:Placemark", namespace)
+                all_placemarks.extend(placemarks)
 
         if not all_placemarks:
             return None
@@ -108,6 +115,7 @@ def extract_and_merge_kmls_from_kmz(kmz_file, target_folder_name, output_name):
         ET.ElementTree(kml_root).write(combined_path, encoding="utf-8", xml_declaration=True)
 
         return combined_path
+
 
 def upload_kml_to_drive(kml_path, filename, folder_id):
     if not os.path.exists(kml_path):
@@ -165,3 +173,4 @@ if submit_clicked:
             upload_kml_to_drive(kml_path, output_filename, GDRIVE_FOLDERS[folder_name])
         else:
             st.error(f"❌ Tidak ditemukan file .kml dalam folder {folder_name}.")
+
