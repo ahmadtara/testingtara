@@ -53,8 +53,8 @@ def get_drive_service():
         flow.fetch_token(code=code)
         creds = flow.credentials
         save_token(creds)
-        st.success("✅ Autentikasi berhasil! Silakan klik ulang tombol upload.")
         st.experimental_set_query_params()
+        st.success("✅ Autentikasi berhasil! Silakan klik ulang tombol upload.")
         st.rerun()
 
     auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', include_granted_scopes='true')
@@ -88,8 +88,8 @@ def upload_kml_to_drive(kml_path, filename, folder_ids):
 # UI Streamlit
 st.title("📤 Upload KMZ ke Google Drive")
 
-uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
-uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
+uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"], key="cluster")
+uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"], key="subfeeder")
 submit_clicked = st.button("🚀 Upload ke Google Drive")
 
 if submit_clicked:
